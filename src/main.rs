@@ -158,7 +158,7 @@ impl<'a> Lexer<'a> {
 
             '0'..='9' => self.tokenise_number(),
             '\"' | '\'' => self.str_literal(),
-            '+' | '-' | '*' | '/' | '%' | '=' | '<' | '>' | '&' | '|' | '^' | '!' => self.operator(self.current_char),
+            '+' | '-' | '–' | '*' | '/' | '%' | '=' | '<' | '>' | '&' | '|' | '^' | '!' => self.operator(self.current_char),
             '(' | ')' | '[' | ']' | '{' | '}' => self.brackets(self.current_char),
             '\0' => Token::Eof,
             _ => panic!("Token not recognised: '{}' Peek: {}", self.current_char, self.chars.peek().unwrap())
@@ -204,6 +204,7 @@ impl<'a> Lexer<'a> {
         match op {
             '+' => Token::Addition,
             '-' => Token::Subtraction,
+            '–' => Token::Subtraction,
             '*' => Token::Multiply,
             '/' => Token::Division,
             '%' => Token::Modulus,
