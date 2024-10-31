@@ -1,4 +1,4 @@
-use crate::lexer::{self, Lexer}
+use crate::lexer::{self, Lexer};
 
 #[derive(Debug)]
 pub enum AST_node {
@@ -8,17 +8,21 @@ pub enum AST_node {
 }
 
 pub struct Parser<'a> {
-    string: String,
+    _string: String,
     lexer: Lexer<'a>
 }
 
 impl<'a> Parser<'a> {
     pub fn new(string: String) -> Self {
-        let l = lexer::Lexer::new(&string);
+        let lexer = lexer::Lexer::new(&string);
         Parser {
-            string,
-            lexer: l,
+            _string: string,
+            lexer: lexer,
         }
+
+    }
+
+    fn parse() {
 
     }
 }
