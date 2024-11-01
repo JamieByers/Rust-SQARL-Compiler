@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use strum_macros::Display;
 
 
-#[derive(Debug, Display)]
+#[derive(Debug, Display, PartialEq)]
 pub enum Token {
     Identifier(String),
     Int(String),

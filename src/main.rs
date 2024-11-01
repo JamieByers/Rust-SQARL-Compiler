@@ -1,4 +1,7 @@
 use std::fs;
+pub mod lexer;
+pub mod parser;
+
 
 fn main() {
 
@@ -7,8 +10,8 @@ fn main() {
         Err(e) => panic!("Error reading file: {}", e),
     };
 
-    let mut l = lexer::Lexer::new(&binding);
-    l.lex();
+    let mut p = parser::Parser::new(&binding);
+    p.next_token();
 
 }
 
