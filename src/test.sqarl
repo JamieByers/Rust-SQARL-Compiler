@@ -1,2 +1,2 @@
-mid-1-1-1-1
-SET high TO mid–1
+DECLARE hello INITIALLY "world"
+SET hello TO "wsg"

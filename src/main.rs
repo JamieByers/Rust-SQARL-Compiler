@@ -1,18 +1,20 @@
 use std::fs;
+
 pub mod lexer;
 pub mod parser;
+pub mod code_generator;
 
 
 fn main() {
 
-    let binding: String = match fs::read_to_string("src/example.sqarl") {
+    let binding = match fs::read_to_string("src/test.sqarl") {
         Ok(contents) => contents,
-        Err(e) => panic!("Error reading file: {}", e),
+        Err(..) => panic!("Cannot read file"),
     };
-
     let mut p = parser::Parser::new(&binding);
-    p.next_token();
+    let tokens = p.parse();
 
+    println!("Tokens: {:?}", tokens);
 }
 
 
