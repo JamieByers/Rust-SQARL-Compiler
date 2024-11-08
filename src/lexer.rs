@@ -4,7 +4,7 @@ use std::iter::Peekable;
 use strum_macros::Display;
 
 
-#[derive(Debug, Display, PartialEq)]
+#[derive(Debug, Display, PartialEq, Clone)]
 pub enum Token {
     Identifier(String),
     Int(String),
@@ -68,6 +68,36 @@ pub enum Token {
 }
 
 // add impl to return keyword constants
+impl Token {
+    pub fn is_keyword(&mut self) -> bool {
+        let keywords = Vec::from([
+
+            Token::Declare,
+            Token::Set,
+            Token::Initially,
+            Token::As,
+            Token::To,
+            Token::If,
+            Token::ElseIf,
+            Token::Else,
+            Token::While,
+            Token::Function ,
+            Token::Procedure,
+            Token::End,
+            Token::Return,
+            Token::Send,
+            Token::Display,
+
+        ]);
+
+        if keywords.contains(self) {
+            true
+        } else {
+            false
+        }
+    }
+
+}
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
@@ -95,6 +125,7 @@ impl<'a> Lexer<'a> {
         self.current_char = self.chars.next().unwrap_or('\0');
         self.current_char
     }
+
 
     fn skip_whitespace(&mut self) {
         while self.current_char.is_whitespace() {

@@ -1,2 +1,2 @@
-DECLARE hello INITIALLY "world"
+DECLARE hello INITIALLY 1+2-3*4/5
 SET hello TO "wsg"

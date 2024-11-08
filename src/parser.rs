@@ -1,40 +1,53 @@
+use std::fmt::format;
+
+use strum_macros::Display;
+
 use crate::lexer::{Lexer, Token};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Display)]
 pub enum AstNode {
     Program(Vec<Box<AstNode>>),
-    VariableDeclaration{ identifier: String, value: String },
+    VariableDeclaration{ identifier: String, value: Expression },
     VariableAssignment { identifier: String, value: String},
     Expression(Expression),
+    Eof,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Display)]
 pub enum Expression {
     Literal(String),
     Identifier(String),
     Binary(i32),
-    BinaryOp(Box<Expression>, String, Box<Expression>)
+    BinaryOp(Box<Expression>, String, Box<Expression>),
+    Elements(Vec<Token>),
 }
 
 pub struct Parser<'a> {
-    lexer: Lexer<'a>
+    lexer: Lexer<'a>,
+    current_token: Token,
 }
 
 impl<'a> Parser<'a> {
     pub fn new(string: &'a String) -> Self {
-        let lexer = Lexer::new(string);
+        let mut lexer = Lexer::new(string);
+        let current_token = lexer.next_token();
         Parser {
-            lexer: lexer,
+            lexer,
+            current_token,
         }
 
     }
 
     fn advance(&mut self) -> Token {
-        self.lexer.next_token()
+        self.current_token = self.lexer.next_token();
+        let token = self.current_token.clone();
+        token
+
     }
 
+
     fn expect(&mut self, tomatch: Token) -> Token {
-        let token: Token = self.lexer.next_token();
+        let token: Token = self.advance();
         if token == tomatch {
             token
         } else {
@@ -44,30 +57,69 @@ impl<'a> Parser<'a> {
     }
 
 
-    pub fn next_token(&mut self) {
-        let token = self.lexer.next_token();
+    pub fn next_token(&mut self) -> AstNode {
+        let token = self.current_token.clone();
 
-        match token {
+        let node = match token {
             Token::Declare => self.variable_declaration(),
-            _ => panic!("cannot parse {}", token)
+            Token::Set => self.variable_assignment(),
+            Token::Eof => AstNode::Eof,
+            _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
+        };
+        node
+    }
+
+    pub fn parse(&mut self) -> Vec<AstNode> {
+        let mut node = self.next_token();
+        let mut nodes = Vec::new();
+
+        while node != AstNode::Eof {
+            nodes.push(node);
+            node = self.next_token();
         }
+
+        nodes
+
+    }
+
+    pub fn parse_with_tokens(&mut self) -> Vec<AstNode> {
+        let mut node = self.next_token();
+        let mut nodes = Vec::new();
+
+        while node != AstNode::Eof {
+            nodes.push(node);
+            node = self.next_token();
+        }
+
+        nodes
+
     }
 
     fn expression(&mut self) -> Expression {
         let mut token: Token = self.advance();
-        while token != Token::Keyword {
-            todo!();
+        let mut tokens = Vec::new();
+        while !token.is_keyword() {
+            tokens.push(token);
+            token = self.advance();
         }
 
-        Expression::Literal("".to_string())
+        Expression::Elements(tokens)
     }
 
-    fn variable_declaration(&mut self) -> AstNode::VariableDeclaration {
-        let identifier = self.advance();
+    fn variable_declaration(&mut self) -> AstNode {
+        let identifier = self.advance().to_string();
+        self.expect(Token::Initially);
+        let value = self.expression();
 
-
-
-        AstNode::VariableDeclaration { identifier: (), value: () }
+        AstNode::VariableDeclaration { identifier,  value }
     }
 
+    fn variable_assignment(&mut self) -> AstNode {
+        let identifier = self.advance().to_string();
+        self.expect(Token::To);
+        let value = self.advance().to_string();
+        self.advance(); // temporary
+
+        AstNode::VariableAssignment { identifier,  value }
+    }
 }

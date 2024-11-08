@@ -11,8 +11,9 @@ fn main() {
         Ok(contents) => contents,
         Err(..) => panic!("Cannot read file"),
     };
+    println!("Binding: {}", binding);
     let mut p = parser::Parser::new(&binding);
-    let tokens = p.parse();
+    let tokens = p.parse_with_tokens();
 
     println!("Tokens: {:?}", tokens);
 }
