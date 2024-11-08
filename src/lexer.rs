@@ -8,7 +8,6 @@ use strum_macros::Display;
 pub enum Token {
     Identifier(String),
     Int(String),
-    Float(String),
     StringLiteral(String),
     Eof,
 
@@ -24,7 +23,7 @@ pub enum Token {
     // Types
     Str,
     Integer,
-    FloatType,
+    Float,
     Array,
     Of,
 
@@ -68,17 +67,7 @@ pub enum Token {
 
 }
 
-impl Token {
-    pub fn get_value(&self) -> String {
-        match self {
-            Token::Identifier(value) => value.to_string(),
-            Token::StringLiteral(value) => value.to_string(),
-            Token::Int(value) => value.to_string(),
-            Token::Float(value) => value.to_string(),
-            _ => panic!("cannot get string value"),
-        }
-    }
-}
+// add impl to return keyword constants
 
 pub struct Lexer<'a> {
     chars: Peekable<Chars<'a>>,
@@ -139,7 +128,7 @@ impl<'a> Lexer<'a> {
                     // Types
                     "STRING" => Token::Str,
                     "INTEGER" => Token::Integer,
-                    "FLOAT" => Token::FloatType,
+                    "FLOAT" => Token::Float,
                     "ARRAY" => Token::Array,
                     "OF" => Token::Of,
                     // Keyword
@@ -193,21 +182,12 @@ impl<'a> Lexer<'a> {
 
     fn tokenise_number(&mut self) -> Token {
         let mut num = String::new();
-        let mut is_float: bool = false;
-
-        while self.current_char.is_digit(10) || self.current_char == '.' {
-            if self.current_char == '.' {
-                is_float = true;
-            }
+        while self.current_char.is_digit(10) {
             num.push(self.current_char);
             self.advance();
         }
 
-        if is_float {
-            Token::Float(num)
-        } else {
-            Token::Int(num)
-        }
+        Token::Int(num)
     }
 
     fn operator(&mut self, op: char) -> Token {
@@ -265,5 +245,6 @@ impl<'a> Lexer<'a> {
     }
 
 }
+
 
 
