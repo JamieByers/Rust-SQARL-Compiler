@@ -7,7 +7,8 @@ use strum_macros::Display;
 #[derive(Debug, Display, PartialEq, Clone)]
 pub enum Token {
     Identifier(String),
-    Int(String),
+    Int(i32),
+    Float(f64),
     StringLiteral(String),
     Eof,
 
@@ -23,18 +24,19 @@ pub enum Token {
     // Types
     Str,
     Integer,
-    Float,
+    Flt,
     Array,
     Of,
 
     // Operators
     Addition,
     Subtraction,
-    Multiply,
+    Multiplication,
     Division,
     Modulus,
     Equals,
     NotEquals,
+    EqualsEquals,
     GreaterThan,
     GreaterThanOrEqual,
     LessThan,
@@ -43,6 +45,8 @@ pub enum Token {
     Or,
     Power,
     Bang,
+    Comma,
+    Period,
 
     // Brackets
     LeftBracket,
@@ -61,6 +65,8 @@ pub enum Token {
     Procedure,
     End,
     Return,
+    True,
+    False,
     //  Printing
     Send,
     Display,
@@ -94,6 +100,16 @@ impl Token {
             true
         } else {
             false
+        }
+    }
+
+    pub fn get_value(&mut self) -> String {
+        match self {
+            Token::Identifier(val) => val.to_string(),
+            Token::Int(val) => val.to_string(),
+            Token::Float(val) => val.to_string(),
+            Token::StringLiteral(val) => format!("\"{}\"", val.to_string()),
+            _ => panic!("Cannot return value"),
         }
     }
 
@@ -137,7 +153,6 @@ impl<'a> Lexer<'a> {
         let mut tokens = Vec::new();
         while self.current_char != '\0' {
             let token = self.next_token();
-            // println!("{}, {}", &token, self.current_char);
             tokens.push(token);
         }
 
@@ -159,7 +174,7 @@ impl<'a> Lexer<'a> {
                     // Types
                     "STRING" => Token::Str,
                     "INTEGER" => Token::Integer,
-                    "FLOAT" => Token::Float,
+                    "FLOAT" => Token::Flt,
                     "ARRAY" => Token::Array,
                     "OF" => Token::Of,
                     // Keyword
@@ -174,13 +189,18 @@ impl<'a> Lexer<'a> {
                     "Send" => Token::Send,
                     "Display" => Token::Display,
 
+                    "true" => Token::True,
+                    "TRUE" => Token::True,
+                    "false" => Token::False,
+                    "FALSE" => Token::False,
+
                     _ => Token::Identifier(identifier),
                 }
             },
 
             '0'..='9' => self.tokenise_number(),
             '\"' | '\'' => self.str_literal(),
-            '+' | '-' | '–' | '*' | '/' | '%' | '=' | '<' | '>' | '&' | '|' | '^' | '!' => self.operator(self.current_char),
+            '+' | '-' | '–' | '*' | '/' | '%' | '=' | '<' | '>' | '&' | '|' | '^' | '!' | ',' | '.' => self.operator(self.current_char),
             '(' | ')' | '[' | ']' | '{' | '}' => self.brackets(self.current_char),
             '\0' => Token::Eof,
             _ => panic!("Token not recognised: '{}' Peek: {}", self.current_char, self.chars.peek().unwrap())
@@ -212,13 +232,25 @@ impl<'a> Lexer<'a> {
     }
 
     fn tokenise_number(&mut self) -> Token {
-        let mut num = String::new();
-        while self.current_char.is_digit(10) {
+        let mut num: String = String::new();
+        let mut is_float: bool = false;
+        while self.current_char.is_digit(10) || self.current_char == '.' {
+             if self.current_char == '.' {
+                is_float = true;
+            }
             num.push(self.current_char);
             self.advance();
         }
 
-        Token::Int(num)
+        if is_float {
+            let out: f64 = num.parse().expect("Cant turn num into Float");
+            Token::Float(out)
+        } else if !is_float {
+            let out: i32 = num.parse().expect("Cant turn into int");
+            Token::Int(out)
+        } else {
+            panic!("Failed turning strint into int");
+        }
     }
 
     fn operator(&mut self, op: char) -> Token {
@@ -227,10 +259,17 @@ impl<'a> Lexer<'a> {
             '+' => Token::Addition,
             '-' => Token::Subtraction,
             '–' => Token::Subtraction,
-            '*' => Token::Multiply,
+            '*' => Token::Multiplication,
             '/' => Token::Division,
             '%' => Token::Modulus,
-            '=' => Token::Equals,
+            '=' => {
+                if *self.chars.peek().unwrap() == '=' {
+                    self.advance();
+                    Token::EqualsEquals
+                } else {
+                    Token::Equals
+                }
+            }
             '<' => {
                 if *self.chars.peek().unwrap() == '=' {
                     self.advance();
@@ -258,6 +297,8 @@ impl<'a> Lexer<'a> {
                     Token::Bang
                 }
             },
+            ',' => Token::Comma,
+            '.' => Token::Period,
             _ => panic!("Operator not accepted"), // Catch-all case for non-operators
         }
     }

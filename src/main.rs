@@ -12,8 +12,10 @@ fn main() {
         Err(..) => panic!("Cannot read file"),
     };
     println!("Binding: {}", binding);
+    let mut lexer = lexer::Lexer::new(&binding);
+    lexer.lex();
     let mut p = parser::Parser::new(&binding);
-    let tokens = p.parse_with_tokens();
+    let tokens = p.parse();
 
     println!("Tokens: {:?}", tokens);
 }
