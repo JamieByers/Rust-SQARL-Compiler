@@ -7,6 +7,13 @@ pub enum AstNode {
     Program(Vec<Box<AstNode>>),
     VariableDeclaration{ identifier: Expression, value: Expression },
     VariableAssignment { identifier: Expression, value: Expression },
+    SendToDisplay { value: Expression },
+    IfStatement { condition: Expression, code_block: Vec<AstNode> },
+    WhileStatement { condition: Expression, code_block: Vec<AstNode> },
+    FunctionDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode>, return_type: Token },
+    ProcedureDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode> },
+    ReturnStatement { value: Expression },
+    CodeBlock (Vec<AstNode>),
     Expression(Expression),
     Eof,
 }
@@ -19,7 +26,6 @@ pub enum Expression {
     BooleanLiteral(bool),
     Identifier(String),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
-    Elements(Vec<Token>),
     Grouping(Box<Expression>),
     Unary(Token, Box<Expression>),
     ListIndex {
@@ -78,6 +84,12 @@ impl<'a> Parser<'a> {
         let node = match token {
             Token::Declare => self.variable_declaration(),
             Token::Set => self.variable_assignment(),
+            Token::Send => self.send_to_display(),
+            Token::If => self.if_statement(),
+            Token::While => self.while_statement(),
+            Token::Function => self.function_declaration(),
+            Token::Procedure => self.procedure_declaration(),
+            Token::Return => self.return_statement(),
             Token::Eof => AstNode::Eof,
             _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
         };
@@ -119,7 +131,7 @@ impl<'a> Parser<'a> {
     fn equality(&mut self) -> Result<Expression, String> {
         let mut expr = self.comparison()?;
 
-        while matches!(self.current_token, Token::NotEquals | Token::EqualsEquals ) {
+        while matches!(self.current_token, Token::NotEquals | Token::EqualsEquals | Token::Equals ) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.expression()?;
@@ -275,5 +287,92 @@ impl<'a> Parser<'a> {
         let value = self.expression().expect("Failed parsing expression");
 
         AstNode::VariableAssignment { identifier,  value }
+    }
+
+    fn send_to_display(&mut self) -> AstNode {
+        self.advance(); // skip SEND
+        let value = self.expression().unwrap();
+        self.advance(); // skip TO
+        self.advance(); // skip DISPLAY
+
+        AstNode::SendToDisplay { value }
+    }
+
+    fn parse_block(&mut self) -> Vec<AstNode> {
+        self.advance(); // skip THEN
+        let mut block = Vec::new();
+        while self.current_token != Token::End {
+            let node = self.next_token();
+            block.push(node);
+        }
+        self.advance(); // skip END
+
+        block
+    }
+
+    fn if_statement(&mut self) -> AstNode {
+        self.advance(); // skip if
+        let condition = self.expression().unwrap();
+        let code_block = self.parse_block();
+
+        AstNode::IfStatement { condition, code_block }
+    }
+
+    fn while_statement(&mut self) -> AstNode {
+        self.advance(); // skip if
+        let condition = self.expression().unwrap();
+        let code_block = self.parse_block();
+
+        AstNode::WhileStatement { condition, code_block }
+    }
+
+
+    fn subprogram(&mut self) -> (Token, Vec<Expression>) {
+        let identifier = self.advance(); // pass by FUNCTION or PROCEDURE toward the identifier
+        self.expect(Token::LeftBracket); // move up to (
+        self.advance(); // skip (
+
+        let mut params = Vec::new();
+        while self.current_token != Token::RightBracket {
+            while self.current_token == Token::Comma {
+                self.advance();
+            }
+            let expr = self.expression().unwrap();
+            params.push(expr);
+        }
+
+
+        (identifier, params)
+
+    }
+
+
+    fn function_declaration(&mut self) -> AstNode {
+        let (identifier, params) = self.subprogram();
+        self.advance(); // skip )
+
+        self.advance(); // skip RETURN
+        let return_type = Some(self.current_token.clone());
+
+        let code_block = self.parse_block();
+
+        AstNode::FunctionDeclaration { identifier, params, code_block, return_type: return_type.unwrap() }
+
+    }
+
+    fn procedure_declaration(&mut self) -> AstNode {
+        let (identifier, params) = self.subprogram();
+
+        let code_block = self.parse_block();
+
+        AstNode::ProcedureDeclaration { identifier, params, code_block }
+
+    }
+
+    fn return_statement(&mut self) -> AstNode {
+        self.advance();
+        let value = self.expression().unwrap();
+
+        AstNode::ReturnStatement { value }
     }
 }

@@ -24,7 +24,7 @@ pub enum Token {
     // Types
     Str,
     Integer,
-    Flt,
+    FloatType,
     Array,
     Of,
 
@@ -65,6 +65,7 @@ pub enum Token {
     Procedure,
     End,
     Return,
+    Returns,
     True,
     False,
     //  Printing
@@ -174,20 +175,26 @@ impl<'a> Lexer<'a> {
                     // Types
                     "STRING" => Token::Str,
                     "INTEGER" => Token::Integer,
-                    "FLOAT" => Token::Flt,
+                    "FLOAT" => Token::FloatType,
                     "ARRAY" => Token::Array,
                     "OF" => Token::Of,
                     // Keyword
-                    "If" => Token::If,
-                    "ElseIf" => Token::ElseIf ,
-                    "Else" => Token::Else,
-                    "While" => Token::While,
-                    "Function " => Token::Function,
-                    "Procedure" => Token::Procedure,
-                    "End" => Token::End,
-                    "Return" => Token::Return,
-                    "Send" => Token::Send,
-                    "Display" => Token::Display,
+                    "IF" => Token::If,
+                    "ELSEIF" => Token::ElseIf ,
+                    "ELSE" => Token::Else,
+                    "WHILE" => Token::While,
+                    "FOR" => self.handle_for_loops(),
+                    "FUNCTION" => Token::Function,
+                    "PROCEDURE" => Token::Procedure,
+                    "END" => {
+                        self.advance();
+                        self.tokenise_identifier();
+                        Token::End
+                    },
+                    "RETURN" => Token::Return,
+                    "RETURNS" => Token::Returns,
+                    "SEND" => Token::Send,
+                    "DISPLAY" => Token::Display,
 
                     "true" => Token::True,
                     "TRUE" => Token::True,
@@ -222,8 +229,11 @@ impl<'a> Lexer<'a> {
 
     fn tokenise_identifier(&mut self) -> String {
         let mut str = String::new();
+        while self.current_char.is_whitespace() {
+            self.advance();
+        }
 
-        while (self.current_char.is_alphabetic() || self.current_char == '_') && self.current_char != ' '  {
+        while (self.current_char.is_alphabetic() || self.current_char.is_numeric() || self.current_char == '_') && self.current_char != ' '  {
             str.push(self.current_char);
             self.advance();
         }
@@ -314,6 +324,10 @@ impl<'a> Lexer<'a> {
             '}' => Token::RightCurlyBracket,
             _ => panic!("Bracket not covered")
         }
+    }
+
+    fn handle_for_loops(&mut self) -> Token {
+        todo!()
     }
 
 }

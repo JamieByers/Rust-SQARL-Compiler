@@ -1,1 +1,8 @@
-DECLARE hello INITIALLY hello.world()
+PROCEDURE func(param1, param2)
+    SEND "hello" TO DISPLAY
+END PROCEDURE
+
+FUNCTION func(param1, param2) RETURNS INTEGER
+    RETURN 2
+END FUNCTION
+
