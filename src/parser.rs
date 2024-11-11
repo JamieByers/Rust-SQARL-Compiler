@@ -10,6 +10,8 @@ pub enum AstNode {
     SendToDisplay { value: Expression },
     IfStatement { condition: Expression, code_block: Vec<AstNode> },
     WhileStatement { condition: Expression, code_block: Vec<AstNode> },
+    RepeatUntilLoop { command: Expression, until: Expression },
+    RepeatTimesLoop { command: Expression, times: Expression },
     FunctionDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode>, return_type: Token },
     ProcedureDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode> },
     ReturnStatement { value: Expression },
@@ -327,6 +329,7 @@ impl<'a> Parser<'a> {
     }
 
 
+
     fn subprogram(&mut self) -> (Token, Vec<Expression>) {
         let identifier = self.advance(); // pass by FUNCTION or PROCEDURE toward the identifier
         self.expect(Token::LeftBracket); // move up to (
@@ -340,6 +343,8 @@ impl<'a> Parser<'a> {
             let expr = self.expression().unwrap();
             params.push(expr);
         }
+
+
 
 
         (identifier, params)
