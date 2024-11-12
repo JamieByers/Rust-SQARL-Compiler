@@ -25,7 +25,11 @@ pub enum Token {
     Str,
     Integer,
     FloatType,
+    Boolean,
+    Character,
     Array,
+    Record,
+    Class,
     Of,
 
     // Operators
@@ -34,6 +38,7 @@ pub enum Token {
     Multiplication,
     Division,
     Modulus,
+    Exponent,
     Equals,
     NotEquals,
     EqualsEquals,
@@ -43,7 +48,7 @@ pub enum Token {
     LessThanOrEqual,
     And,
     Or,
-    Power,
+    Not,
     Bang,
     Comma,
     Period,
@@ -75,6 +80,9 @@ pub enum Token {
     Returns,
     True,
     False,
+    Open,
+    Close,
+    Create,
     //  Printing
     Send,
     Display,
@@ -183,6 +191,10 @@ impl<'a> Lexer<'a> {
                     "STRING" => Token::Str,
                     "INTEGER" => Token::Integer,
                     "FLOAT" => Token::FloatType,
+                    "BOOLEAN" => Token::Boolean,
+                    "RECORD" => Token::Record,
+                    "CLASS" => Token::Class,
+                    "CHARACTER" => Token::Character,
                     "ARRAY" => Token::Array,
                     "OF" => Token::Of,
                     // Keyword
@@ -191,7 +203,7 @@ impl<'a> Lexer<'a> {
                     "ELSE" => Token::Else,
                     "WHILE" => Token::While,
                     "FOR" => Token::For,
-                    "EACH" => Token::Each,  // NOTE THERE IS GOING TO BE AN ISSUE WITH END EACH 
+                    "EACH" => Token::Each,
                     "FROM" => Token::From,
                     "REPEAT" => Token::Repeat,
                     "UNTIL" => Token::Until,
@@ -213,6 +225,15 @@ impl<'a> Lexer<'a> {
                     "TRUE" => Token::True,
                     "false" => Token::False,
                     "FALSE" => Token::False,
+                    "MOD" => Token::Modulus,
+                    "AND" => Token::And,
+                    "OR" => Token::Or,
+                    "NOT" => Token::Not,
+
+                    "OPEN" => Token::Open,
+                    "CLOSE" => Token::Close,
+                    "CREATE" => Token::Create,
+
 
                     _ => Token::Identifier(identifier),
                 }
@@ -285,6 +306,7 @@ impl<'a> Lexer<'a> {
             '*' => Token::Multiplication,
             '/' => Token::Division,
             '%' => Token::Modulus,
+            '^' => Token::Exponent,
             '=' => {
                 if *self.chars.peek().unwrap() == '=' {
                     self.advance();
@@ -311,7 +333,6 @@ impl<'a> Lexer<'a> {
             },
             '&' => Token::And,
             '|' => Token::Or,
-            '^' => Token::Power,
             '!' => {
                 if *self.chars.peek().unwrap() == '=' {
                     self.advance();
