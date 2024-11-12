@@ -61,6 +61,10 @@ pub enum Token {
     ElseIf,
     Else,
     While,
+    For,
+    Each,
+    From,
+    Step,
     Until,
     Repeat,
     Times,
@@ -186,10 +190,13 @@ impl<'a> Lexer<'a> {
                     "ELSEIF" => Token::ElseIf ,
                     "ELSE" => Token::Else,
                     "WHILE" => Token::While,
+                    "FOR" => Token::For,
+                    "EACH" => Token::Each,  // NOTE THERE IS GOING TO BE AN ISSUE WITH END EACH 
+                    "FROM" => Token::From,
                     "REPEAT" => Token::Repeat,
                     "UNTIL" => Token::Until,
                     "TIMES" => Token::Times,
-                    "FOR" => self.handle_for_loops(),
+                    "STEP" => Token::Step,
                     "FUNCTION" => Token::Function,
                     "PROCEDURE" => Token::Procedure,
                     "END" => {
@@ -332,9 +339,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn handle_for_loops(&mut self) -> Token {
-        todo!()
-    }
 
 }
 

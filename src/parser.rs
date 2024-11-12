@@ -12,6 +12,8 @@ pub enum AstNode {
     WhileStatement { condition: Expression, code_block: Vec<AstNode> },
     RepeatUntilLoop { command: Expression, until: Expression },
     RepeatTimesLoop { command: Expression, times: Expression },
+    ForFromLoop { id: Token, lower: Expression, higher: Expression, step: Option<Expression>, code_block: Vec<AstNode>},
+    ForEachLoop { id: Token, from: Expression, code_block: Vec<AstNode>},
     FunctionDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode>, return_type: Token },
     ProcedureDeclaration { identifier: Token, params: Vec<Expression>, code_block: Vec<AstNode> },
     ReturnStatement { value: Expression },
@@ -88,6 +90,7 @@ impl<'a> Parser<'a> {
             Token::Set => self.variable_assignment(),
             Token::Send => self.send_to_display(),
             Token::If => self.if_statement(),
+            Token::For => self.handle_for_loops(),
             Token::While => self.while_statement(),
             Token::Function => self.function_declaration(),
             Token::Procedure => self.procedure_declaration(),
@@ -328,7 +331,56 @@ impl<'a> Parser<'a> {
         AstNode::WhileStatement { condition, code_block }
     }
 
+    fn handle_for_loops(&mut self) -> AstNode {
+        self.advance(); // skip FOR to either EACH or an identifier
 
+        let identifier: Token = self.current_token.clone();
+        if identifier == Token::Each {
+            self.for_each_loop()
+        } else {
+            self.for_from_loop(identifier)
+        }
+
+    }
+
+    fn for_each_loop(&mut self) -> AstNode {
+        let identifier: Token = self.advance(); // skip EACH
+
+        self.advance(); // skip past FROM 
+
+        let from: Expression = self.expression().unwrap();
+
+        let code_block: Vec<AstNode> = self.parse_block();
+
+        self.advance(); // skip the EACH at the end of END FOR EACH 
+
+        AstNode::ForEachLoop { id: identifier, from, code_block }
+    }
+
+    fn for_from_loop(&mut self, identifier: Token) -> AstNode {
+        self.advance(); // move to from 
+        self.advance(); // move up to expression 
+
+        let lower: Expression = self.expression().unwrap();
+        self.advance(); // skip TO 
+        let higher: Expression = self.expression().unwrap();
+
+        let mut step: Option<Expression> = None;
+        if self.current_token == Token::Step {
+            step = Some(self.handle_step());
+        } 
+
+        let code_block: Vec<AstNode> = self.parse_block();
+
+        AstNode::ForFromLoop { id: identifier, lower, higher, step, code_block }
+
+    }
+
+    fn handle_step(&mut self) -> Expression {
+        self.advance(); // skip step 
+        let step = self.expression().unwrap();
+        step
+    }
 
     fn subprogram(&mut self) -> (Token, Vec<Expression>) {
         let identifier = self.advance(); // pass by FUNCTION or PROCEDURE toward the identifier
