@@ -19,6 +19,7 @@ pub enum AstNode {
     OpenFile { file: Expression },
     CloseFile { file: Expression },
     CreateFile { file: Expression },
+    Input { value: Expression },
     ReturnStatement { value: Expression },
     CodeBlock (Vec<AstNode>),
     Expression(Expression),
@@ -133,6 +134,7 @@ impl<'a> Parser<'a> {
             Token::Procedure => self.procedure_declaration(),
             Token::Return => self.return_statement(),
             Token::Open | Token::Close | Token::Create => self.handle_filing(),
+            Token::Receive => self.handle_input(),
             Token::Eof => AstNode::Eof,
             _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
         };
@@ -612,5 +614,13 @@ impl<'a> Parser<'a> {
         file
     }
 
+    fn handle_input(&mut self) -> AstNode {
+        self.advance(); // skip receive
 
+        let value = self.expression().unwrap();
+        self.advance(); // skip FROM
+        self.advance(); // skip KEYBOARD
+
+        AstNode::Input { value }
+    }
 }

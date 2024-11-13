@@ -83,6 +83,8 @@ pub enum Token {
     Open,
     Close,
     Create,
+    Receive,
+    Keyboard,
     //  Printing
     Send,
     Display,
@@ -233,6 +235,8 @@ impl<'a> Lexer<'a> {
                     "OPEN" => Token::Open,
                     "CLOSE" => Token::Close,
                     "CREATE" => Token::Create,
+                    "RECEIVE" => Token::Receive,
+                    "KEYBOARD" => Token::Keyboard,
 
 
                     _ => Token::Identifier(identifier),

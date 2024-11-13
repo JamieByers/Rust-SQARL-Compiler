@@ -1,10 +1,1 @@
-IF condition = true THEN
-    SEND "Hello world!" TO DISPLAY
-ELSE IF condition = false THEN
-    SEND "Hello world!" TO DISPLAY
-ELSE IF condition = None THEN
-    SEND "Hello world!" TO DISPLAY
-ELSE
-    SEND "Hello world!" TO DISPLAY
-END IF
-
+RECEIVE hello FROM KEYBOARD
