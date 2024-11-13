@@ -1,3 +1,10 @@
-PROCEDURE func(STRING param1, INTEGER param2)
-    SET hello TO "world"
-END PROCEDURE
+IF condition = true THEN
+    SEND "Hello world!" TO DISPLAY
+ELSE IF condition = false THEN
+    SEND "Hello world!" TO DISPLAY
+ELSE IF condition = None THEN
+    SEND "Hello world!" TO DISPLAY
+ELSE
+    SEND "Hello world!" TO DISPLAY
+END IF
+

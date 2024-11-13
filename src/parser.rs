@@ -8,7 +8,7 @@ pub enum AstNode {
     VariableDeclaration{ identifier: Expression, value: Expression, var_type: Type },
     VariableAssignment { identifier: Expression, value: Expression },
     SendToDisplay { value: Expression },
-    IfStatement { condition: Expression, code_block: Vec<AstNode> },
+    IfStatement { condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: Option<ElseStatement> },
     WhileStatement { condition: Expression, code_block: Vec<AstNode> },
     RepeatUntilLoop { command: Expression, until: Expression },
     RepeatTimesLoop { command: Expression, times: Expression },
@@ -67,6 +67,16 @@ pub enum Type {
     Other(String),
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ElseIfStatement {
+    condition: Expression,
+    code_block: Vec<AstNode>,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ElseStatement {
+   code_block: Vec<AstNode>
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Parameter {
@@ -349,24 +359,76 @@ impl<'a> Parser<'a> {
         AstNode::SendToDisplay { value }
     }
 
-    fn parse_block(&mut self) -> Vec<AstNode> {
-        self.advance(); // skip THEN
+    fn parse_block_without_advance(&mut self) -> Vec<AstNode> {
         let mut block = Vec::new();
-        while self.current_token != Token::End {
+        while !matches!(self.current_token, Token::End | Token::Else | Token::ElseIf ) {
             let node = self.next_token();
             block.push(node);
         }
-        self.advance(); // skip END
+
+        if self.current_token == Token::End {
+            self.advance(); // skip END
+        }
 
         block
     }
+
+    fn parse_block(&mut self) -> Vec<AstNode>{
+        self.advance();
+        self.parse_block_without_advance()
+    }
+
 
     fn if_statement(&mut self) -> AstNode {
         self.advance(); // skip if
         let condition = self.expression().unwrap();
         let code_block = self.parse_block();
 
-        AstNode::IfStatement { condition, code_block }
+        let mut elif_statements: Vec<ElseIfStatement> = Vec::new();
+        let mut else_statement: Option<ElseStatement> = None;
+
+        if self.current_token == Token::Else {
+            (elif_statements, else_statement) = self.handle_else();
+        }
+
+        AstNode::IfStatement { condition, code_block, elif_statements, else_statement }
+    }
+
+    fn handle_else(&mut self) -> (Vec<ElseIfStatement>, Option<ElseStatement>) {
+        println!("Running handle else");
+        let mut elif_statements: Vec<ElseIfStatement> = Vec::new();
+        let mut else_statement: Option<ElseStatement> = None;
+
+        while self.current_token == Token::Else {
+            println!("running while else: {}", self.current_token);
+            self.advance(); // skip ELSE
+
+            if self.current_token == Token::If {
+                println!("running while else after skipping ELSE: {}", self.current_token);
+                let elif_statement = self.else_if_statement();
+                elif_statements.push(elif_statement);
+            } else {
+                let else_block = self.else_statement();
+                else_statement = Some(ElseStatement { code_block: else_block });
+            }
+
+        }
+
+        (elif_statements, else_statement)
+    }
+
+    fn else_if_statement(&mut self) -> ElseIfStatement {
+        self.advance(); // skip IF
+        let elif_condition = self.expression().unwrap();
+        let elif_block = self.parse_block();
+
+        ElseIfStatement { condition: elif_condition, code_block: elif_block }
+    }
+
+    fn else_statement(&mut self) -> Vec<AstNode> {
+        let elif_block = self.parse_block_without_advance();
+
+        elif_block
     }
 
     fn while_statement(&mut self) -> AstNode {
