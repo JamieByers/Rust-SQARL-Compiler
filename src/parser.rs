@@ -20,6 +20,7 @@ pub enum AstNode {
     CloseFile { file: Expression },
     CreateFile { file: Expression },
     Input { value: Expression },
+    Record { identifier: String, values: Vec<RecordValue> },
     ReturnStatement { value: Expression },
     CodeBlock (Vec<AstNode>),
     Expression(Expression),
@@ -85,6 +86,12 @@ pub struct Parameter {
     identifier: Expression,
 }
 
+#[derive(Debug, PartialEq)]
+pub struct RecordValue {
+    value_type: Type,
+    identifier: Token,
+}
+
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
@@ -135,6 +142,7 @@ impl<'a> Parser<'a> {
             Token::Return => self.return_statement(),
             Token::Open | Token::Close | Token::Create => self.handle_filing(),
             Token::Receive => self.handle_input(),
+            Token::Record => self.handle_record(),
             Token::Eof => AstNode::Eof,
             _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
         };
@@ -622,5 +630,27 @@ impl<'a> Parser<'a> {
         self.advance(); // skip KEYBOARD
 
         AstNode::Input { value }
+    }
+
+    fn handle_record(&mut self) -> AstNode {
+        let identifier = self.advance().get_value().to_string();
+        self.advance();
+        self.expect(Token::LeftCurlyBracket); // skip to {
+
+        let mut values: Vec<RecordValue> = Vec::new();
+        while self.current_token != Token::RightCurlyBracket {
+            while self.current_token == Token::Comma {
+                self.advance();
+            }
+            let value_type = self.handle_type(self.current_token.clone());
+            let value = self.current_token.clone();
+            self.advance();
+            let record_value = RecordValue { value_type, identifier: value };
+            values.push(record_value);
+        }
+
+        self.advance(); // skip }
+
+        AstNode::Record { identifier, values }
     }
 }

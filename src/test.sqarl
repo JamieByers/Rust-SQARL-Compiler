@@ -1,1 +1,1 @@
-RECEIVE hello FROM KEYBOARD
+RECORD Person IS { STRING name, INTEGER age }
