@@ -1,1 +1,3 @@
-DECLARE hello INITIALLY AS ARRAY OF ARRAY "hello"
+PROCEDURE func(STRING param1, INTEGER param2)
+    SET hello TO "world"
+END PROCEDURE

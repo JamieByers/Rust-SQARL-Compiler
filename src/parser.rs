@@ -62,6 +62,7 @@ pub enum Type {
     Class,
     ArrayOf { repetition: i32, array_type: Box<Type> },
     None,
+    Identifier(String),
 
     Other(String),
 }
@@ -437,6 +438,7 @@ impl<'a> Parser<'a> {
             Token::Array => Type::Array,
             Token::Record => Type::Record,
             Token::Class => Type::Class,
+            Token::Identifier(val) => Type::Identifier(val),
 
             input_type => Type::Other(input_type.to_string())
         };
@@ -452,18 +454,18 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_array_of(&mut self) -> Type {
-        self.advance(); // skip OF
+        println!("running array of {}", self.current_token);
         let mut reps = 0;
         let mut final_type = Type::None;
 
-        while self.current_token != Token::Of && self.current_token != Token::Eof {
-            println!("{}", self.current_token);
+        while self.current_token == Token::Of && self.current_token != Token::Eof {
+            self.advance(); // skip past Of
+            println!("running array of while loop {}", self.current_token);
             if self.current_token != Token::Array && self.current_token != Token::Of {
                final_type = self.handle_type(self.current_token.clone());
             } else if self.current_token == Token::Array {
                 reps += 1;
                 self.advance(); // skip ARRAY
-                self.advance(); // skip OF
             } else {
                 panic!("Error handling array of: {}", self.current_token)
             }
@@ -484,7 +486,6 @@ impl<'a> Parser<'a> {
             }
             let param_type = self.handle_type(self.current_token.clone());
             let expr = self.expression().unwrap();
-            println!("expr: {}", &expr);
             let param = Parameter { param_type, identifier: expr };
             params.push(param);
         }
