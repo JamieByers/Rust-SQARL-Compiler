@@ -20,6 +20,7 @@ pub enum Token {
     Initially ,
     As,
     To,
+    Is,
 
     // Types
     Str,
@@ -189,6 +190,7 @@ impl<'a> Lexer<'a> {
                     "SET" => Token::Set,
                     "TO" => Token::To,
                     "AS" => Token::As,
+                    "IS" => Token::Is,
                     // Types
                     "STRING" => Token::Str,
                     "INTEGER" => Token::Integer,

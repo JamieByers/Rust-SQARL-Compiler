@@ -633,9 +633,10 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_record(&mut self) -> AstNode {
-        let identifier = self.advance().get_value().to_string();
+        let identifier: String = self.advance().get_value().to_string();
         self.advance();
         self.expect(Token::LeftCurlyBracket); // skip to {
+        self.advance();
 
         let mut values: Vec<RecordValue> = Vec::new();
         while self.current_token != Token::RightCurlyBracket {
