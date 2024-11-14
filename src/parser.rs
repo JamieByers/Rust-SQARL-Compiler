@@ -20,7 +20,8 @@ pub enum AstNode {
     CloseFile { file: Expression },
     CreateFile { file: Expression },
     Input { value: Expression },
-    Record { identifier: String, values: Vec<RecordValue> },
+    Record { identifier: String, values: Vec<ObjectValue> },
+    Class { identifier: String, values: Vec<ObjectValue> },
     ReturnStatement { value: Expression },
     CodeBlock (Vec<AstNode>),
     Expression(Expression),
@@ -87,7 +88,7 @@ pub struct Parameter {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct RecordValue {
+pub struct ObjectValue {
     value_type: Type,
     identifier: Token,
 }
@@ -143,6 +144,7 @@ impl<'a> Parser<'a> {
             Token::Open | Token::Close | Token::Create => self.handle_filing(),
             Token::Receive => self.handle_input(),
             Token::Record => self.handle_record(),
+            Token::Class => self.handle_class(),
             Token::Eof => AstNode::Eof,
             _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
         };
@@ -632,13 +634,13 @@ impl<'a> Parser<'a> {
         AstNode::Input { value }
     }
 
-    fn handle_record(&mut self) -> AstNode {
+    fn handle_object_declaration(&mut self) -> (String, Vec<ObjectValue>) {
         let identifier: String = self.advance().get_value().to_string();
         self.advance();
         self.expect(Token::LeftCurlyBracket); // skip to {
         self.advance();
 
-        let mut values: Vec<RecordValue> = Vec::new();
+        let mut values: Vec<ObjectValue> = Vec::new();
         while self.current_token != Token::RightCurlyBracket {
             while self.current_token == Token::Comma {
                 self.advance();
@@ -646,12 +648,23 @@ impl<'a> Parser<'a> {
             let value_type = self.handle_type(self.current_token.clone());
             let value = self.current_token.clone();
             self.advance();
-            let record_value = RecordValue { value_type, identifier: value };
+            let record_value = ObjectValue { value_type, identifier: value };
             values.push(record_value);
         }
 
         self.advance(); // skip }
 
+        (identifier, values)
+
+    }
+
+    fn handle_record(&mut self) -> AstNode {
+        let (identifier, values) = self.handle_object_declaration();
         AstNode::Record { identifier, values }
+    }
+
+    fn handle_class(&mut self) -> AstNode {
+        let (identifier, values) = self.handle_object_declaration();
+        AstNode::Class { identifier, values }
     }
 }

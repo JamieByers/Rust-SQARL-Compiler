@@ -1,1 +1,1 @@
-RECORD Person IS { STRING name, INTEGER age }
+CLASS Person IS { STRING name, INTEGER age }
