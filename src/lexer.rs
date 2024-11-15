@@ -86,6 +86,10 @@ pub enum Token {
     Create,
     Receive,
     Keyboard,
+    Methods,
+    Inherits,
+    With,
+    Override,
     //  Printing
     Send,
     Display,
@@ -239,6 +243,10 @@ impl<'a> Lexer<'a> {
                     "CREATE" => Token::Create,
                     "RECEIVE" => Token::Receive,
                     "KEYBOARD" => Token::Keyboard,
+                    "METHODS" => Token::Methods,
+                    "INHERITS" => Token::Inherits,
+                    "WITH" => Token::With,
+                    "OVERRIDE" => Token::Override,
 
 
                     _ => Token::Identifier(identifier),
