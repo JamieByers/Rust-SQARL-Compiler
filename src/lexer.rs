@@ -90,6 +90,7 @@ pub enum Token {
     Inherits,
     With,
     Override,
+    Constructor,
     //  Printing
     Send,
     Display,
@@ -247,6 +248,7 @@ impl<'a> Lexer<'a> {
                     "INHERITS" => Token::Inherits,
                     "WITH" => Token::With,
                     "OVERRIDE" => Token::Override,
+                    "CONSTRUCTOR" => Token::Constructor,
 
 
                     _ => Token::Identifier(identifier),
