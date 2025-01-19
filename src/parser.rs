@@ -2,7 +2,7 @@ use strum_macros::Display;
 
 use crate::lexer::{Lexer, Token};
 
-#[derive(Debug, PartialEq, Display)]
+#[derive(Debug, PartialEq, Display, Clone)]
 pub enum AstNode {
     Program(Vec<Box<AstNode>>),
     VariableDeclaration{ identifier: Expression, value: Expression, var_type: Type },
@@ -28,7 +28,7 @@ pub enum AstNode {
     Eof,
 }
 
-#[derive(Debug, PartialEq, Display)]
+#[derive(Debug, PartialEq, Display, Clone)]
 pub enum Expression {
     StringLiteral(String),
     IntegerLiteral(i32),
@@ -53,7 +53,7 @@ pub enum Expression {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Str,
     Integer,
@@ -70,24 +70,24 @@ pub enum Type {
     Other(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ElseIfStatement {
     condition: Expression,
     code_block: Vec<AstNode>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ElseStatement {
    code_block: Vec<AstNode>
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Parameter {
     param_type: Type,
     identifier: Expression,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ObjectValue {
     value_type: Type,
     identifier: Token,
