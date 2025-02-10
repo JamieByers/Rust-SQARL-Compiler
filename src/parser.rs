@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use strum_macros::Display;
 
 use crate::lexer::{Lexer, Token};
@@ -5,34 +6,92 @@ use crate::lexer::{Lexer, Token};
 #[derive(Debug, PartialEq, Display, Clone)]
 pub enum AstNode {
     Program(Vec<Box<AstNode>>),
-    VariableDeclaration{ identifier: Expression, value: Expression, var_type: Type },
-    VariableAssignment { identifier: Expression, value: Expression },
-    SendToDisplay { value: Expression },
-    IfStatement { condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: Option<ElseStatement> },
-    WhileStatement { condition: Expression, code_block: Vec<AstNode> },
-    RepeatUntilLoop { command: Expression, until: Expression },
-    RepeatTimesLoop { command: Expression, times: Expression },
-    ForFromLoop { id: Token, lower: Expression, higher: Expression, step: Expression, code_block: Vec<AstNode>},
-    ForEachLoop { id: Token, from: Expression, code_block: Vec<AstNode>},
-    FunctionDeclaration { identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode>, return_type: Token },
-    ProcedureDeclaration { identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode> },
-    OpenFile { file: Expression },
-    CloseFile { file: Expression },
-    CreateFile { file: Expression },
-    Input { value: Expression },
-    Record { identifier: String, values: Vec<ObjectValue> },
-    Class { identifier: String, values: Vec<ObjectValue> },
-    ReturnStatement { value: Expression },
-    CodeBlock (Vec<AstNode>),
+    VariableDeclaration {
+        identifier: Expression,
+        value: Expression,
+        var_type: Type,
+    },
+    VariableAssignment {
+        identifier: Expression,
+        value: Expression,
+    },
+    SendToDisplay {
+        value: Expression,
+    },
+    IfStatement {
+        condition: Expression,
+        code_block: Vec<AstNode>,
+        elif_statements: Vec<ElseIfStatement>,
+        else_statement: Option<ElseStatement>,
+    },
+    WhileStatement {
+        condition: Expression,
+        code_block: Vec<AstNode>,
+    },
+    RepeatUntilLoop {
+        command: Expression,
+        until: Expression,
+    },
+    RepeatTimesLoop {
+        command: Expression,
+        times: Expression,
+    },
+    ForFromLoop {
+        id: Token,
+        lower: Expression,
+        higher: Expression,
+        step: Expression,
+        code_block: Vec<AstNode>,
+    },
+    ForEachLoop {
+        id: Token,
+        from: Expression,
+        code_block: Vec<AstNode>,
+    },
+    FunctionDeclaration {
+        identifier: Token,
+        params: Vec<Parameter>,
+        code_block: Vec<AstNode>,
+        return_type: Token,
+    },
+    ProcedureDeclaration {
+        identifier: Token,
+        params: Vec<Parameter>,
+        code_block: Vec<AstNode>,
+    },
+    OpenFile {
+        file: Expression,
+    },
+    CloseFile {
+        file: Expression,
+    },
+    CreateFile {
+        file: Expression,
+    },
+    Input {
+        value: Expression,
+    },
+    Record {
+        identifier: String,
+        values: Vec<ObjectValue>,
+    },
+    Class {
+        identifier: String,
+        values: Vec<ObjectValue>,
+    },
+    ReturnStatement {
+        value: Expression,
+    },
+    CodeBlock(Vec<AstNode>),
     Expression(Expression),
     Eof,
 }
 
-#[derive(Debug, PartialEq, Display, Clone)]
+#[derive(Debug, PartialEq, Display, Clone, Eq, Hash)]
 pub enum Expression {
     StringLiteral(String),
     IntegerLiteral(i32),
-    FloatLiteral(f64),
+    FloatLiteral(String),
     ArrayLiteral(Vec<Box<Expression>>),
     BooleanLiteral(bool),
     Identifier(String),
@@ -50,12 +109,23 @@ pub enum Expression {
     MethodCall {
         prefix: Box<Expression>,
         postfix: Box<Expression>,
+    },
+}
+
+impl Expression {
+    pub fn value(&mut self) -> String {
+        match self {
+            Expression::Identifier(id) => id.clone(),
+
+            _ => panic!("Cannot get value from expression")
+        }
     }
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Type {
     Str,
+    Strl(usize),
     Integer,
     FloatType,
     Boolean,
@@ -63,7 +133,10 @@ pub enum Type {
     Array,
     Record,
     Class,
-    ArrayOf { repetition: i32, array_type: Box<Type> },
+    ArrayOf {
+        repetition: i32,
+        array_type: Box<Type>,
+    },
     None,
     Identifier(String),
 
@@ -78,7 +151,7 @@ pub struct ElseIfStatement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ElseStatement {
-   code_block: Vec<AstNode>
+    code_block: Vec<AstNode>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -96,6 +169,7 @@ pub struct ObjectValue {
 pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
+    variables: HashMap<String, (Expression, Type)>,
 }
 
 impl<'a> Parser<'a> {
@@ -105,16 +179,14 @@ impl<'a> Parser<'a> {
         Parser {
             lexer,
             current_token,
+            variables: HashMap::new(),
         }
-
     }
-
 
     fn advance(&mut self) -> Token {
         self.current_token = self.lexer.next_token();
         let token = self.current_token.clone();
         token
-
     }
 
     fn expect(&mut self, tomatch: Token) -> Token {
@@ -126,7 +198,6 @@ impl<'a> Parser<'a> {
             panic!("{}", msg)
         }
     }
-
 
     pub fn next_token(&mut self) -> AstNode {
         let token = self.current_token.clone();
@@ -146,7 +217,14 @@ impl<'a> Parser<'a> {
             Token::Record => self.handle_record(),
             Token::Class => self.handle_class(),
             Token::Eof => AstNode::Eof,
-            _ => panic!("{}", format!("Cannot parse token: {:?}, next token: {:?}", token, self.advance()))
+            _ => panic!(
+                "{}",
+                format!(
+                    "Cannot parse token: {:?}, next token: {:?}",
+                    token,
+                    self.advance()
+                )
+            ),
         };
         node
     }
@@ -161,7 +239,6 @@ impl<'a> Parser<'a> {
         }
 
         AstNode::Program(nodes)
-
     }
 
     pub fn parse_with_tokens(&mut self) -> Vec<AstNode> {
@@ -174,19 +251,20 @@ impl<'a> Parser<'a> {
         }
 
         nodes
-
     }
 
     fn expression(&mut self) -> Result<Expression, String> {
         let expr: Expression = self.equality()?;
         Ok(expr)
-
     }
 
     fn equality(&mut self) -> Result<Expression, String> {
         let mut expr = self.comparison()?;
 
-        while matches!(self.current_token, Token::NotEquals | Token::EqualsEquals | Token::Equals | Token::And ) {
+        while matches!(
+            self.current_token,
+            Token::NotEquals | Token::EqualsEquals | Token::Equals | Token::And
+        ) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.expression()?;
@@ -199,7 +277,13 @@ impl<'a> Parser<'a> {
     fn comparison(&mut self) -> Result<Expression, String> {
         let mut expr = self.term()?;
 
-        while matches!(self.current_token, Token::GreaterThan | Token::GreaterThanOrEqual | Token::LessThan | Token::LessThanOrEqual ) {
+        while matches!(
+            self.current_token,
+            Token::GreaterThan
+                | Token::GreaterThanOrEqual
+                | Token::LessThan
+                | Token::LessThanOrEqual
+        ) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.expression()?;
@@ -212,7 +296,7 @@ impl<'a> Parser<'a> {
     fn term(&mut self) -> Result<Expression, String> {
         let mut expr = self.factor()?;
 
-        while matches!(self.current_token, Token::Addition | Token::Subtraction ) {
+        while matches!(self.current_token, Token::Addition | Token::Subtraction) {
             let op = self.current_token.clone();
             self.advance();
             let right = self.expression()?;
@@ -240,11 +324,10 @@ impl<'a> Parser<'a> {
             let op = self.current_token.clone();
             self.advance();
             let right: Expression = self.unary()?;
-            return Ok(Expression::Unary(op, Box::new(right)))
+            return Ok(Expression::Unary(op, Box::new(right)));
         }
 
         self.call()
-
     }
 
     fn call(&mut self) -> Result<Expression, String> {
@@ -258,7 +341,7 @@ impl<'a> Parser<'a> {
             } else if self.current_token == Token::Period {
                 expr = self.method_call(expr)?;
             } else {
-                break
+                break;
             }
         }
 
@@ -279,19 +362,27 @@ impl<'a> Parser<'a> {
         }
 
         if self.current_token != Token::RightBracket {
-            return Err(format!("Expected right bracket, got {}", self.current_token));
+            return Err(format!(
+                "Expected right bracket, got {}",
+                self.current_token
+            ));
         }
         self.advance(); // skips )
 
-        Ok(Expression::FunctionCall { name: Box::new(func_name), parameters  })
-
+        Ok(Expression::FunctionCall {
+            name: Box::new(func_name),
+            parameters,
+        })
     }
 
     fn method_call(&mut self, prefix: Expression) -> Result<Expression, String> {
         self.advance(); // skipping .
         let postfix = self.expression()?;
 
-        Ok(Expression::MethodCall { prefix: Box::new(prefix), postfix: Box::new(postfix) })
+        Ok(Expression::MethodCall {
+            prefix: Box::new(prefix),
+            postfix: Box::new(postfix),
+        })
     }
 
     fn finish_index(&mut self, list_name: Expression) -> Result<Expression, String> {
@@ -301,15 +392,17 @@ impl<'a> Parser<'a> {
 
         self.advance(); // skip ]
 
-        Ok(Expression::ListIndex { list: Box::new(list_name), index: Box::new(index) })
-
+        Ok(Expression::ListIndex {
+            list: Box::new(list_name),
+            index: Box::new(index),
+        })
     }
 
-    fn primary(&mut self) -> Result<Expression, String>{
+    fn primary(&mut self) -> Result<Expression, String> {
         let expr = match &self.current_token {
             Token::StringLiteral(val) => Ok(Expression::StringLiteral(val.to_string())),
             Token::Int(val) => Ok(Expression::IntegerLiteral(*val)),
-            Token::Float(val) => Ok(Expression::FloatLiteral(*val)),
+            Token::Float(val) => Ok(Expression::FloatLiteral(val.clone().to_string())),
             Token::Identifier(val) => Ok(Expression::Identifier(val.to_string())),
             Token::False => Ok(Expression::BooleanLiteral(false)),
             Token::True => Ok(Expression::BooleanLiteral(true)),
@@ -317,7 +410,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let expr = self.expression()?;
                 Ok(Expression::Grouping(Box::new(expr)))
-            },
+            }
             Token::LeftSquareBracket => {
                 self.advance(); // skip [
                 let mut elemements = Vec::new();
@@ -330,10 +423,12 @@ impl<'a> Parser<'a> {
                 }
 
                 Ok(Expression::ArrayLiteral(elemements))
-            },
+            }
 
-            _ => Err(format!("Failed primary parsing at token: {}", self.current_token)),
-
+            _ => Err(format!(
+                "Failed primary parsing at token: {}",
+                self.current_token
+            )),
         };
         self.advance();
         expr
@@ -348,9 +443,24 @@ impl<'a> Parser<'a> {
             self.advance();
             var_type = self.handle_type(self.current_token.clone());
         }
-        let value = self.expression().expect("Failed parsing expression in variable declaration");
 
-        AstNode::VariableDeclaration { identifier, value, var_type }
+        let value = self
+            .expression()
+            .expect("Failed parsing expression in variable declaration");
+        if var_type == Type::None || var_type == Type::Str {
+            var_type = self.type_infer(value.clone());
+        }
+
+        let id = identifier.clone().value();
+
+        self.variables
+            .insert(id.clone(), (value.clone(), var_type.clone()));
+
+        AstNode::VariableDeclaration {
+            identifier,
+            value,
+            var_type,
+        }
     }
 
     fn variable_assignment(&mut self) -> AstNode {
@@ -359,7 +469,25 @@ impl<'a> Parser<'a> {
         self.advance();
         let value = self.expression().expect("Failed parsing expression");
 
-        AstNode::VariableAssignment { identifier,  value }
+        if let Some((val, _var_type)) = self.variables.get_mut(&identifier.clone().value()) {
+            *val = value.clone();
+        }
+
+        AstNode::VariableAssignment { identifier, value }
+    }
+
+    fn type_infer(&mut self, t: Expression) -> Type {
+        match t {
+            Expression::StringLiteral(s) => Type::Strl(s.len()+1),
+            Expression::IntegerLiteral(..) => Type::Integer,
+            Expression::FloatLiteral(..) => Type::FloatType,
+            Expression::BooleanLiteral(..) => Type::Boolean,
+            Expression::Identifier(identifier) => {
+                let (_, variable_type) = self.variables.get(&identifier).expect("Cannot get variable");
+                variable_type.clone()
+            }
+            _ => Type::Other(t.to_string()),
+        }
     }
 
     fn send_to_display(&mut self) -> AstNode {
@@ -373,7 +501,7 @@ impl<'a> Parser<'a> {
 
     fn parse_block_without_advance(&mut self) -> Vec<AstNode> {
         let mut block = Vec::new();
-        while !matches!(self.current_token, Token::End | Token::Else | Token::ElseIf ) {
+        while !matches!(self.current_token, Token::End | Token::Else | Token::ElseIf) {
             let node = self.next_token();
             block.push(node);
         }
@@ -385,11 +513,10 @@ impl<'a> Parser<'a> {
         block
     }
 
-    fn parse_block(&mut self) -> Vec<AstNode>{
+    fn parse_block(&mut self) -> Vec<AstNode> {
         self.advance();
         self.parse_block_without_advance()
     }
-
 
     fn if_statement(&mut self) -> AstNode {
         self.advance(); // skip if
@@ -403,7 +530,12 @@ impl<'a> Parser<'a> {
             (elif_statements, else_statement) = self.handle_else();
         }
 
-        AstNode::IfStatement { condition, code_block, elif_statements, else_statement }
+        AstNode::IfStatement {
+            condition,
+            code_block,
+            elif_statements,
+            else_statement,
+        }
     }
 
     fn handle_else(&mut self) -> (Vec<ElseIfStatement>, Option<ElseStatement>) {
@@ -416,14 +548,18 @@ impl<'a> Parser<'a> {
             self.advance(); // skip ELSE
 
             if self.current_token == Token::If {
-                println!("running while else after skipping ELSE: {}", self.current_token);
+                println!(
+                    "running while else after skipping ELSE: {}",
+                    self.current_token
+                );
                 let elif_statement = self.else_if_statement();
                 elif_statements.push(elif_statement);
             } else {
                 let else_block = self.else_statement();
-                else_statement = Some(ElseStatement { code_block: else_block });
+                else_statement = Some(ElseStatement {
+                    code_block: else_block,
+                });
             }
-
         }
 
         (elif_statements, else_statement)
@@ -434,7 +570,10 @@ impl<'a> Parser<'a> {
         let elif_condition = self.expression().unwrap();
         let elif_block = self.parse_block();
 
-        ElseIfStatement { condition: elif_condition, code_block: elif_block }
+        ElseIfStatement {
+            condition: elif_condition,
+            code_block: elif_block,
+        }
     }
 
     fn else_statement(&mut self) -> Vec<AstNode> {
@@ -448,7 +587,10 @@ impl<'a> Parser<'a> {
         let condition = self.expression().unwrap();
         let code_block = self.parse_block();
 
-        AstNode::WhileStatement { condition, code_block }
+        AstNode::WhileStatement {
+            condition,
+            code_block,
+        }
     }
 
     fn handle_for_loops(&mut self) -> AstNode {
@@ -460,7 +602,6 @@ impl<'a> Parser<'a> {
         } else {
             self.for_from_loop(identifier)
         }
-
     }
 
     fn for_each_loop(&mut self) -> AstNode {
@@ -474,7 +615,11 @@ impl<'a> Parser<'a> {
 
         self.advance(); // skip the EACH at the end of END FOR EACH
 
-        AstNode::ForEachLoop { id: identifier, from, code_block }
+        AstNode::ForEachLoop {
+            id: identifier,
+            from,
+            code_block,
+        }
     }
 
     fn for_from_loop(&mut self, identifier: Token) -> AstNode {
@@ -492,8 +637,13 @@ impl<'a> Parser<'a> {
 
         let code_block: Vec<AstNode> = self.parse_block();
 
-        AstNode::ForFromLoop { id: identifier, lower, higher, step, code_block }
-
+        AstNode::ForFromLoop {
+            id: identifier,
+            lower,
+            higher,
+            step,
+            code_block,
+        }
     }
 
     fn handle_step(&mut self) -> Expression {
@@ -502,7 +652,7 @@ impl<'a> Parser<'a> {
         step
     }
 
-    fn handle_type(&mut self, input_type: Token ) -> Type {
+    fn handle_type(&mut self, input_type: Token) -> Type {
         let out_type = match input_type {
             Token::Str => Type::Str,
             Token::Integer => Type::Integer,
@@ -514,7 +664,7 @@ impl<'a> Parser<'a> {
             Token::Class => Type::Class,
             Token::Identifier(val) => Type::Identifier(val),
 
-            input_type => Type::Other(input_type.to_string())
+            input_type => Type::Other(input_type.to_string()),
         };
 
         self.advance();
@@ -524,7 +674,6 @@ impl<'a> Parser<'a> {
         } else {
             out_type
         }
-
     }
 
     fn handle_array_of(&mut self) -> Type {
@@ -536,7 +685,7 @@ impl<'a> Parser<'a> {
             self.advance(); // skip past Of
             println!("running array of while loop {}", self.current_token);
             if self.current_token != Token::Array && self.current_token != Token::Of {
-               final_type = self.handle_type(self.current_token.clone());
+                final_type = self.handle_type(self.current_token.clone());
             } else if self.current_token == Token::Array {
                 reps += 1;
                 self.advance(); // skip ARRAY
@@ -545,7 +694,10 @@ impl<'a> Parser<'a> {
             }
         }
 
-        Type::ArrayOf { repetition: reps, array_type: Box::new(final_type) }
+        Type::ArrayOf {
+            repetition: reps,
+            array_type: Box::new(final_type),
+        }
     }
 
     fn subprogram(&mut self) -> (Token, Vec<Parameter>) {
@@ -560,17 +712,15 @@ impl<'a> Parser<'a> {
             }
             let param_type = self.handle_type(self.current_token.clone());
             let expr = self.expression().unwrap();
-            let param = Parameter { param_type, identifier: expr };
+            let param = Parameter {
+                param_type,
+                identifier: expr,
+            };
             params.push(param);
         }
 
-
-
-
         (identifier, params)
-
     }
-
 
     fn function_declaration(&mut self) -> AstNode {
         let (identifier, params) = self.subprogram();
@@ -581,8 +731,12 @@ impl<'a> Parser<'a> {
 
         let code_block = self.parse_block();
 
-        AstNode::FunctionDeclaration { identifier, params, code_block, return_type: return_type.unwrap() }
-
+        AstNode::FunctionDeclaration {
+            identifier,
+            params,
+            code_block,
+            return_type: return_type.unwrap(),
+        }
     }
 
     fn procedure_declaration(&mut self) -> AstNode {
@@ -590,8 +744,11 @@ impl<'a> Parser<'a> {
 
         let code_block = self.parse_block();
 
-        AstNode::ProcedureDeclaration { identifier, params, code_block }
-
+        AstNode::ProcedureDeclaration {
+            identifier,
+            params,
+            code_block,
+        }
     }
 
     fn return_statement(&mut self) -> AstNode {
@@ -602,20 +759,21 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_filing(&mut self) -> AstNode {
-
         match self.current_token {
-            Token::Open => {
-                AstNode::OpenFile { file: self.handle_file() }
+            Token::Open => AstNode::OpenFile {
+                file: self.handle_file(),
             },
-            Token::Close => {
-                AstNode::CloseFile { file: self.handle_file() }
+            Token::Close => AstNode::CloseFile {
+                file: self.handle_file(),
             },
-            Token::Create => {
-                AstNode::CreateFile { file: self.handle_file() }
+            Token::Create => AstNode::CreateFile {
+                file: self.handle_file(),
             },
-            _ => panic!("Current token does not fit handle filing: {}", self.current_token),
+            _ => panic!(
+                "Current token does not fit handle filing: {}",
+                self.current_token
+            ),
         }
-
     }
 
     fn handle_file(&mut self) -> Expression {
@@ -648,14 +806,16 @@ impl<'a> Parser<'a> {
             let value_type = self.handle_type(self.current_token.clone());
             let value = self.current_token.clone();
             self.advance();
-            let record_value = ObjectValue { value_type, identifier: value };
+            let record_value = ObjectValue {
+                value_type,
+                identifier: value,
+            };
             values.push(record_value);
         }
 
         self.advance(); // skip }
 
         (identifier, values)
-
     }
 
     fn handle_record(&mut self) -> AstNode {

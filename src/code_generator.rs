@@ -1,25 +1,120 @@
-use crate::parser::AstNode;
+use core::panic;
+use inkwell::types::BasicTypeEnum;
+use inkwell::context::Context;
+use inkwell::values::PointerValue;
+use inkwell::builder::Builder;
+use std::collections::HashMap;
 
-pub struct CodeGenerator {
-    ast_nodes: Vec<AstNode>,
-    out: String,
+use crate::parser::{AstNode, Expression, Type};
+
+pub struct CodeGenerator<'ctx> {
+    context: &'ctx Context,
+    builder: Builder<'ctx>,
+    module: inkwell::module::Module<'ctx>,
+    variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
+    temp_counter: i32,
 }
 
-impl CodeGenerator {
-    pub fn new(&mut self, nodes: Vec<AstNode>) -> Self {
+impl<'ctx> CodeGenerator<'ctx> {
+    pub fn new(context: &'ctx Context, module_name: &str) -> Self {
+        let module = context.create_module(module_name);
+        let builder = context.create_builder();
+
         CodeGenerator {
-            ast_nodes: nodes,
-            out: String::new(),
+            context,
+            builder,
+            module,
+            variables: HashMap::new(),
+            temp_counter: 0,
         }
     }
 
-    pub fn generate(&mut self) {
-        for node in &self.ast_nodes {
-            match node {
-                AstNode::VariableDeclaration { identifier, value, .. } => self.out.push_str(&format!("{} = {}", identifier, value)),
-                _ => panic!("cannot generate code from node: {}", node)
+    pub fn compile(&mut self, input: AstNode) {
+        let input: Vec<_> = match input.clone() {
+            AstNode::Program(nodes) => nodes,
+            _ => panic!("Expected program node")
+        };
+
+        self.create_main_func();
+
+        for node in input {
+            match *node {
+                AstNode::VariableDeclaration { identifier, value, var_type } => self.compile_variable_declaration(identifier, value, var_type),
+                _ => panic!("Cannot compile with node: {}", node)
             }
         }
+
+        self.add_return_to_main();
+        self.module.print_to_stderr();
+    }
+
+    pub fn create_main_func(&mut self) {
+        let ret_type = self.context.i32_type();
+        let fn_type = ret_type.fn_type(&[], false);
+
+        let function = self.module.add_function("main", fn_type, None);
+        let entry = self.context.append_basic_block(function, "entry");
+
+        self.builder.position_at_end(entry);
+    }
+
+    fn compile_variable_declaration(&mut self, identifier: Expression, value: Expression, var_type: Type) {
+        let variable_identifier = if let Expression::Identifier(value) = identifier {
+            value
+        } else {
+            panic!("No variable identifier to compile")
+        };
+
+        let ty = self.llvm_type_converter(var_type);
+        let alloca = self.builder.build_alloca(ty, &variable_identifier).expect("ERROR with alloca in var dec");
+
+        let inital_value = self.compile_expr(value);
+        self.builder.build_store(alloca, inital_value).expect("Error building store");
+
+        self.variables.insert(variable_identifier, (alloca, ty));
+    }
+
+    fn compile_expr(&mut self, expr: Expression) -> inkwell::values::BasicValueEnum<'ctx> {
+        match expr {
+            Expression::StringLiteral(s) => inkwell::values::BasicValueEnum::ArrayValue(self.context.const_string(s.as_bytes(), true)),
+            Expression::IntegerLiteral(val) => self.context.i32_type().const_int(val as u64, false).into(),
+            Expression::FloatLiteral(val) => self.context.f64_type().const_float(val.parse::<f64>().expect("cannot turn val into f64")).into(),
+            Expression::Identifier(id) => self.build_load(id),
+            _ => panic!("Cannot compile expression: {:?}", expr),
+        }
+    }
+
+    fn build_load(&mut self, id: String) -> inkwell::values::BasicValueEnum<'ctx> {
+        self.temp_counter += 1;
+        let temp = format!("temp{}_load", self.temp_counter);
+        let (alloca, ty) = self.variables.get(&id).expect("Could not get either alloca or type in build load");
+        let value = self.builder.build_load(*ty, *alloca, &temp).expect("Couldnt build load").into();
+        value
+    }
+
+    fn llvm_type_converter(&mut self, t: Type) -> BasicTypeEnum<'ctx> {
+        match t {
+            Type::Strl(l) => {
+                let i8_type = self.context.i8_type();
+                let array_type = i8_type.array_type(l.try_into().unwrap());
+                array_type.into()
+            }
+            Type::Integer => self.context.i32_type().into(),
+            Type::FloatType => self.context.f64_type().into(),
+            Type::Boolean => self.context.bool_type().into(),
+            Type::Character => self.context.i8_type().into(),
+
+            _ => panic!("Typing is not compatable with type: {:?}", t)
+        }
+    }
+
+    fn add_return_to_main(&mut self) {
+        let function = self.module.get_function("main").expect("Could not get main function in ret function");
+        let entry = function.get_first_basic_block().expect("No entry block found");
+
+        self.builder.position_at_end(entry);
+
+        let _ = self.builder.build_return(Some(&self.context.i32_type().const_int(0, false)));
 
     }
 }

@@ -4,11 +4,11 @@ use std::iter::Peekable;
 use strum_macros::Display;
 
 
-#[derive(Debug, Display, PartialEq, Clone)]
+#[derive(Debug, Display, PartialEq, Clone, Eq, Hash)]
 pub enum Token {
     Identifier(String),
     Int(i32),
-    Float(f64),
+    Float(String),
     StringLiteral(String),
     Eof,
 
@@ -303,8 +303,7 @@ impl<'a> Lexer<'a> {
         }
 
         if is_float {
-            let out: f64 = num.parse().expect("Cant turn num into Float");
-            Token::Float(out)
+            Token::Float(num)
         } else if !is_float {
             let out: i32 = num.parse().expect("Cant turn into int");
             Token::Int(out)
