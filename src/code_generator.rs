@@ -1,11 +1,10 @@
 use core::panic;
-use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
+use inkwell::types::BasicTypeEnum;
 use inkwell::context::Context;
 use inkwell::values::PointerValue;
 use inkwell::builder::Builder;
 use std::collections::HashMap;
 
-use crate::lexer::Token;
 use crate::parser::{AstNode, Expression, Type};
 
 pub struct CodeGenerator<'ctx> {
@@ -76,6 +75,11 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.variables.insert(variable_identifier, (alloca, ty));
     }
 
+    // IDEA
+    //
+    // To combat the issue with string assignment ie storing more bits than possible -
+    //   store [13 x i8] c"Hello world!\00", ptr %example, align 1
+    //   store [9 x i8] c"Example!\00", ptr %example, align 1
     fn compile_variable_assignment(&mut self, identifier: Expression, value: Expression) {
         let variable_identifier = if let Expression::Identifier(id) = identifier {
             id
@@ -106,6 +110,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         }
     }
 
+    // ill continue this later
     // fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
     //     match op {
     //         Token::Addition => {

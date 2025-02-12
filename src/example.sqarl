@@ -1,3 +1,2 @@
-DECLARE x INITIALLY 1
-DECLARE y INITIALLY 2
-SET y TO x
+DECLARE example INITIALLY "Hello world!"
+SET example TO "Example!"
