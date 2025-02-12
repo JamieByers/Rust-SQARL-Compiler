@@ -1,17 +1,18 @@
 use core::panic;
-use inkwell::types::BasicTypeEnum;
+use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
 use inkwell::values::PointerValue;
 use inkwell::builder::Builder;
 use std::collections::HashMap;
 
+use crate::lexer::Token;
 use crate::parser::{AstNode, Expression, Type};
 
 pub struct CodeGenerator<'ctx> {
-    context: &'ctx Context,
+    pub context: &'ctx Context,
     builder: Builder<'ctx>,
-    module: inkwell::module::Module<'ctx>,
-    variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
+    pub module: inkwell::module::Module<'ctx>,
+    pub variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
     temp_counter: i32,
 }
 
@@ -40,6 +41,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         for node in input {
             match *node {
                 AstNode::VariableDeclaration { identifier, value, var_type } => self.compile_variable_declaration(identifier, value, var_type),
+                AstNode::VariableAssignment { identifier, value } => self.compile_variable_assignment(identifier, value),
                 _ => panic!("Cannot compile with node: {}", node)
             }
         }
@@ -74,15 +76,44 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.variables.insert(variable_identifier, (alloca, ty));
     }
 
+    fn compile_variable_assignment(&mut self, identifier: Expression, value: Expression) {
+        let variable_identifier = if let Expression::Identifier(id) = identifier {
+            id
+        } else {
+            panic!("No variable identifier to compile")
+        };
+
+        let val = self.compile_expr(value);
+
+        if let Some((alloca, _)) = self.variables.get(&variable_identifier) {
+            let _ = self.builder.build_store(alloca.clone(), val.clone());
+        } else {
+            panic!("Couldnt get alloca ty in variable assignment");
+        }
+
+    }
+
     fn compile_expr(&mut self, expr: Expression) -> inkwell::values::BasicValueEnum<'ctx> {
         match expr {
             Expression::StringLiteral(s) => inkwell::values::BasicValueEnum::ArrayValue(self.context.const_string(s.as_bytes(), true)),
             Expression::IntegerLiteral(val) => self.context.i32_type().const_int(val as u64, false).into(),
             Expression::FloatLiteral(val) => self.context.f64_type().const_float(val.parse::<f64>().expect("cannot turn val into f64")).into(),
             Expression::Identifier(id) => self.build_load(id),
+            // Expression::BinaryOp(left, op, right) => {
+            //     self.compile_binary_op(*left, op, *right)
+            // }
             _ => panic!("Cannot compile expression: {:?}", expr),
         }
     }
+
+    // fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
+    //     match op {
+    //         Token::Addition => {
+
+    //         },
+    //         _ => panic!("Binary op compilation failed")
+    //     }
+    // }
 
     fn build_load(&mut self, id: String) -> inkwell::values::BasicValueEnum<'ctx> {
         self.temp_counter += 1;

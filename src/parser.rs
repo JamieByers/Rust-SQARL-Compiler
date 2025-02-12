@@ -469,8 +469,10 @@ impl<'a> Parser<'a> {
         self.advance();
         let value = self.expression().expect("Failed parsing expression");
 
-        if let Some((val, _var_type)) = self.variables.get_mut(&identifier.clone().value()) {
+        if let Some((val, _)) = self.variables.get_mut(&identifier.clone().value()) {
             *val = value.clone();
+        } else {
+            panic!("Couldnt get value in variable assignment")
         }
 
         AstNode::VariableAssignment { identifier, value }
