@@ -24,5 +24,6 @@ fn main() {
     let context = Context::create();
     let mut code_generator = CodeGenerator::new(&context, "SQARL Compiler");
     code_generator.compile(node);
+    code_generator.output();
 
 }

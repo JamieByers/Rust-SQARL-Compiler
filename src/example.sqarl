@@ -1,2 +1,3 @@
-DECLARE example INITIALLY "Hello world!"
-SET example TO "Example!"
+DECLARE message INITIALLY "Hello World!"
+
+SEND message TO DISPLAY
