@@ -139,6 +139,7 @@ pub enum Type {
     },
     None,
     Identifier(String),
+    BinaryOp,
 
     Other(String),
 }
@@ -447,8 +448,11 @@ impl<'a> Parser<'a> {
         let value = self
             .expression()
             .expect("Failed parsing expression in variable declaration");
+
         if var_type == Type::None || var_type == Type::Str {
             var_type = self.type_infer(value.clone());
+        } else if var_type == Type::Other("BinaryOp".to_string()) {
+            var_type = Type::BinaryOp
         }
 
         let id = identifier.clone().value();

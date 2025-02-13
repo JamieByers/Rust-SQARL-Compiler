@@ -1,11 +1,13 @@
 use core::panic;
-use inkwell::types::BasicTypeEnum;
+use crate::lexer::Token;
+use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
 use inkwell::values::PointerValue;
 use inkwell::builder::Builder;
 use std::collections::HashMap;
 
 use crate::parser::{AstNode, Expression, Type};
+
 
 pub struct Variable<'ctx> {
     alloca: PointerValue<'ctx>,
@@ -82,6 +84,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.builder.position_at_end(entry);
     }
 
+
     fn setup_compiler(&mut self, input: Vec<Box<AstNode>>) {
         if input.iter().any(|node| matches!(&**node, AstNode::SendToDisplay { .. })) {
             let i32_type = self.context.ptr_type(inkwell::AddressSpace::default());
@@ -92,6 +95,11 @@ impl<'ctx> CodeGenerator<'ctx> {
                 _  => self.module.add_function("printf", printf_type, None),
             };
         }
+    }
+
+    fn get_temp(&mut self, identifier: &str) -> String {
+        self.temp_counter += 1;
+        format!("{}{}", identifier, self.temp_counter)
     }
 
     fn compile_print(&mut self, value: Expression) {
@@ -105,29 +113,53 @@ impl<'ctx> CodeGenerator<'ctx> {
                     panic!("Could not get variable in compile print")
                 };
 
+                println!("parsed type: {:?}", variable.parsed_type);
+                let format_str = match variable.parsed_type {
+                    Type::Strl(_) => self.builder.build_global_string_ptr("%s\n", "format_str"),
+                    Type::Integer => self.builder.build_global_string_ptr("%d\n", "format_str"),
+                    Type::FloatType => self.builder.build_global_string_ptr("%f\n", "format_str"),
+                    _ => {
+                        match variable.var_type {
+                            _ => panic!("Unsupported type for printing")
+                        }
+                    }
+                }.expect("could not build format string");
+
                 let var_alloca = variable.alloca.clone();
 
-                let var_value = self.builder.build_load(
-                    variable.var_type,
-                    var_alloca,
-                    "var_value"
-                ).expect("Couldnt get var value");
+                if matches!(variable.parsed_type, Type::Strl(_)) {
+                    let _ = self.builder.build_call(
+                        printf,
+                        &[format_str.as_pointer_value().into(), var_alloca.into()],
+                        "printf"
+                    );
+                } else {
+                    let var_value = self.builder.build_load(
+                        variable.var_type,
+                        var_alloca,
+                        "var_value"
+                    ).expect("Couldnt get var value");
 
-                let format_str = self.builder.build_global_string_ptr("%d\n", "format_str").expect("could not build format string");
-
-                let _ = self.builder.build_call(
-                    printf,
-                    &[format_str.as_pointer_value().into(), var_value.into()],
-                    "printf"
-                );
+                    let _ = self.builder.build_call(
+                        printf,
+                        &[format_str.as_pointer_value().into(), var_value.into()],
+                        "printf"
+                    );
+                }
             },
-
             _ => {
                 let val = self.compile_expr(value);
                 let _ = self.builder.build_call(printf, &[val.into()], "printf");
             }
         }
+    }
 
+    fn infer_type(&mut self, ty: BasicValueEnum) -> Type {
+        match ty {
+            BasicValueEnum::IntValue(..) => Type::Integer,
+            BasicValueEnum::FloatValue(..) => Type::FloatType,
+            _ => panic!("Cannot infer type {:?}", ty)
+        }
     }
 
     fn compile_variable_declaration(&mut self, identifier: Expression, value: Expression, var_type: Type) {
@@ -137,17 +169,26 @@ impl<'ctx> CodeGenerator<'ctx> {
             panic!("No variable identifier to compile")
         };
 
-        let ty = self.llvm_type_converter(var_type.clone());
-        let alloca = self.builder.build_alloca(ty, &variable_identifier).expect("ERROR with alloca in var dec");
-
+        let ty: BasicTypeEnum;
+        let mut parsed_type = var_type.clone();
         let inital_value = self.compile_expr(value);
+
+        if var_type == Type::BinaryOp || var_type == Type::Other("BinaryOp".to_string()){
+            let inferred_type: Type = self.infer_type(inital_value);
+            parsed_type = inferred_type.clone();
+            ty = self.llvm_type_converter(inferred_type);
+        } else {
+            ty = self.llvm_type_converter(var_type.clone());
+        }
+
+        let alloca = self.builder.build_alloca(ty, &variable_identifier).expect("ERROR with alloca in var dec");
         self.builder.build_store(alloca, inital_value).expect("Error building store");
 
         let variable = Variable {
             alloca,
             var_type: ty,
             var_counter: 0,
-            parsed_type: var_type,
+            parsed_type,
         };
         self.variables.insert(variable_identifier, variable);
     }
@@ -170,7 +211,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         match parsed_type {
             Type::Strl(_) => {
                 let counter = variable_counter + 1;
-                let temp = format!("{}{}", &variable_identifier, counter.to_string());
+                let temp = self.get_temp(&variable_identifier);
 
                 let string_value = match value {
                     Expression::StringLiteral(s) => s.clone(),
@@ -200,22 +241,37 @@ impl<'ctx> CodeGenerator<'ctx> {
             Expression::IntegerLiteral(val) => self.context.i32_type().const_int(val as u64, false).into(),
             Expression::FloatLiteral(val) => self.context.f64_type().const_float(val.parse::<f64>().expect("cannot turn val into f64")).into(),
             Expression::Identifier(id) => self.build_load(id),
-            // Expression::BinaryOp(left, op, right) => {
-            //     self.compile_binary_op(*left, op, *right)
-            // }
+            Expression::BinaryOp(left, op, right) => {
+                self.compile_binary_op(*left, op, *right)
+            }
             _ => panic!("Cannot compile expression: {:?}", expr),
         }
     }
 
     // ill continue this later
-    // fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
-    //     match op {
-    //         Token::Addition => {
+    fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
+        let lft = self.compile_expr(left);
+        let rght = self.compile_expr(right);
 
-    //         },
-    //         _ => panic!("Binary op compilation failed")
-    //     }
-    // }
+        match (lft, rght) {
+            (
+                inkwell::values::BasicValueEnum::IntValue(lhs),
+                inkwell::values::BasicValueEnum::IntValue(rhs),
+            ) => {
+                let name = self.get_temp("temp");
+                let result = match op {
+                    Token::Addition => self.builder.build_int_add(lhs, rhs, &name).expect("int add failed"),
+                    Token::Subtraction => self.builder.build_int_sub(lhs, rhs, &name).expect("int sub failed"),
+                    Token::Multiplication => self.builder.build_int_mul(lhs, rhs, &name).expect("int mul failed"),
+                    _ => panic!("Cannot complete addition with type: {:?}", op)
+                };
+
+                inkwell::values::BasicValueEnum::IntValue(result) // Ensure correct return type
+            }
+            _ => panic!("Addition cannot support different types or type used for addition"),
+        }
+
+    }
 
     fn build_load(&mut self, id: String) -> inkwell::values::BasicValueEnum<'ctx> {
         self.temp_counter += 1;

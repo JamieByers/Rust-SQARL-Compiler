@@ -1,3 +1,3 @@
-DECLARE message INITIALLY "Hello World!"
-
-SEND message TO DISPLAY
+DECLARE sum INITIALLY 1+2
+DECLARE new_sum INITIALLY sum+3
+SEND new_sum TO DISPLAY
