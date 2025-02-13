@@ -95,10 +95,39 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     fn compile_print(&mut self, value: Expression) {
-        let val = self.compile_expr(value);
-
         let printf = self.module.get_function("printf").expect("printf function does not exist: print compilation error");
-        let _ = self.builder.build_call(printf, &[val.into()], "printf");
+
+        match value {
+            Expression::Identifier(identifier) => {
+               let variable = if let Some(variable) = self.variables.get(&identifier) {
+                    variable
+                } else {
+                    panic!("Could not get variable in compile print")
+                };
+
+                let var_alloca = variable.alloca.clone();
+
+                let var_value = self.builder.build_load(
+                    variable.var_type,
+                    var_alloca,
+                    "var_value"
+                ).expect("Couldnt get var value");
+
+                let format_str = self.builder.build_global_string_ptr("%d\n", "format_str").expect("could not build format string");
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[format_str.as_pointer_value().into(), var_value.into()],
+                    "printf"
+                );
+            },
+
+            _ => {
+                let val = self.compile_expr(value);
+                let _ = self.builder.build_call(printf, &[val.into()], "printf");
+            }
+        }
+
     }
 
     fn compile_variable_declaration(&mut self, identifier: Expression, value: Expression, var_type: Type) {
@@ -123,18 +152,6 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.variables.insert(variable_identifier, variable);
     }
 
-    // IDEA
-    //
-    // To combat the issue with string assignment ie storing more bits than possible -
-    //   store [13 x i8] c"Hello world!\00", ptr %example, align 1
-    //   store [9 x i8] c"Example!\00", ptr %example, align 1
-    //-
-    //I could create a new variable instead with the same variable name -
-    // %variable -> %variable1
-    // I could do this with a tracker in the variable hashmap - identifier : (alloca, type,
-    // tracker)
-    // I would also have to change the alloca to the new variable
-    //
     fn compile_variable_assignment(&mut self, identifier: Expression, value: Expression) {
         let variable_identifier = if let Expression::Identifier(id) = identifier {
             id
