@@ -1,4 +1,6 @@
 use core::panic;
+use std::result;
+use inkwell::values::FloatValue;
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -6,7 +8,7 @@ use inkwell::values::PointerValue;
 use inkwell::builder::Builder;
 use std::collections::HashMap;
 
-use crate::parser::{AstNode, Expression, Type};
+use crate::parser::{AstNode, ElseIfStatement, ElseStatement, Expression, Type};
 
 
 pub struct Variable<'ctx> {
@@ -48,20 +50,30 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.create_main_func();
 
         for node in input {
-            match *node {
-                AstNode::VariableDeclaration { identifier, value, var_type } => self.compile_variable_declaration(identifier, value, var_type),
-                AstNode::VariableAssignment { identifier, value } => self.compile_variable_assignment(identifier, value),
-                AstNode::SendToDisplay { value } => self.compile_print(value),
-                _ => panic!("Cannot compile with node: {}", node)
-            }
+            self.match_node(*node);
         }
 
         self.add_return_to_main();
         self.module.print_to_stderr();
     }
 
-    // TODO
-    //
+    fn match_node(&mut self, node: AstNode) {
+        match node {
+            AstNode::VariableDeclaration { identifier, value, var_type } => self.compile_variable_declaration(identifier, value, var_type),
+            AstNode::VariableAssignment { identifier, value } => self.compile_variable_assignment(identifier, value),
+            AstNode::SendToDisplay { value } => self.compile_print(value),
+            // AstNode::IfStatement { condition, code_block, elif_statements, else_statement } => self.compile_if_statement(condition, code_block, elif_statements, else_statement),
+            _ => panic!("Cannot compile with node: {}", node)
+        }
+    }
+
+    // fn compile_block(&mut self, nodes: Vec<AstNode>) {
+    //     for node in nodes {
+    //         self.match_node(node);
+    //     }
+    // }
+
+
     // write sys code to run this automatically -
     // llc -filetype=obj output.ll -o output.o
     // clang output.o -o program
@@ -106,6 +118,27 @@ impl<'ctx> CodeGenerator<'ctx> {
         let printf = self.module.get_function("printf").expect("printf function does not exist: print compilation error");
 
         match value {
+            Expression::BinaryOp(_, _, _) => {
+                let result = self.compile_expr(value);
+
+                // Create appropriate format string based on the result type
+                let format_str = match result {
+                    BasicValueEnum::IntValue(_) => {
+                        self.builder.build_global_string_ptr("%d\n", "format_str")
+                    },
+                    BasicValueEnum::FloatValue(_) => {
+                        self.builder.build_global_string_ptr("%f\n", "format_str")
+                    },
+                    _ => panic!("Unsupported type for printing binary operation result")
+                }.expect("Could not build format string");
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[format_str.as_pointer_value().into(), result.into()],
+                    "printf"
+                );
+            },
+
             Expression::Identifier(identifier) => {
                let variable = if let Some(variable) = self.variables.get(&identifier) {
                     variable
@@ -248,7 +281,6 @@ impl<'ctx> CodeGenerator<'ctx> {
         }
     }
 
-    // ill continue this later
     fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
         let lft = self.compile_expr(left);
         let rght = self.compile_expr(right);
@@ -263,14 +295,108 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Token::Addition => self.builder.build_int_add(lhs, rhs, &name).expect("int add failed"),
                     Token::Subtraction => self.builder.build_int_sub(lhs, rhs, &name).expect("int sub failed"),
                     Token::Multiplication => self.builder.build_int_mul(lhs, rhs, &name).expect("int mul failed"),
+                    Token::Division => self.builder.build_int_signed_div(lhs, rhs, &name).expect("int deiv failed"),
+                    Token::Modulus => self.builder.build_int_signed_rem(lhs, rhs, &name).expect("int rem failed"),
+                    Token::Equals | Token::NotEquals | Token::GreaterThan |
+                    Token::GreaterThanOrEqual | Token::LessThan | Token::LessThanOrEqual => {
+                        let predicate = match op {
+                            Token::Equals => inkwell::IntPredicate::EQ,
+                            Token::NotEquals => inkwell::IntPredicate::NE,
+                            Token::GreaterThan => inkwell::IntPredicate::SGT,
+                            Token::GreaterThanOrEqual => inkwell::IntPredicate::SGE,
+                            Token::LessThan => inkwell::IntPredicate::SLT,
+                            Token::LessThanOrEqual => inkwell::IntPredicate::SLE,
+                            _ => unreachable!()
+                        };
+
+                        // First create the comparison
+                        let compare_result = self.builder.build_int_compare(predicate, lhs, rhs, &name)
+                            .expect("int compare failed");
+                        compare_result
+
+                    },
                     _ => panic!("Cannot complete addition with type: {:?}", op)
                 };
 
-                inkwell::values::BasicValueEnum::IntValue(result) // Ensure correct return type
-            }
+                inkwell::values::BasicValueEnum::IntValue(result)
+            },
+            (
+                inkwell::values::BasicValueEnum::FloatValue(lhs),
+                inkwell::values::BasicValueEnum::FloatValue(rhs),
+            ) => {
+                let result = self.float_match(lhs, rhs, op);
+                inkwell::values::BasicValueEnum::FloatValue(result)
+            },
+            (BasicValueEnum::FloatValue(lhs), BasicValueEnum::IntValue(rhs))
+            | (BasicValueEnum::IntValue(rhs), BasicValueEnum::FloatValue(lhs)) => {
+                    let (lhs, rhs) = self.convert_to_float(lhs.into(), rhs.into());
+                    let result = self.float_match(lhs, rhs, op);
+
+                    BasicValueEnum::FloatValue(result)
+                },
+
             _ => panic!("Addition cannot support different types or type used for addition"),
         }
 
+    }
+
+    fn float_match(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>, op: Token) -> FloatValue<'ctx> {
+        let name = self.get_temp("temp");
+        match op {
+            Token::Addition => self.builder.build_float_add(lhs, rhs, &name).expect("float add failed"),
+            Token::Subtraction => self.builder.build_float_sub(lhs, rhs, &name).expect("float sub failed"),
+            Token::Multiplication => self.builder.build_float_mul(lhs, rhs, &name).expect("float mul failed"),
+            Token::Division => self.builder.build_float_div(lhs, rhs, &name).expect("float deiv failed"),
+            Token::Modulus => self.builder.build_float_rem(lhs, rhs, &name).expect("float rem failed"),
+            Token::Equals | Token::NotEquals | Token::GreaterThan |
+            Token::GreaterThanOrEqual | Token::LessThan | Token::LessThanOrEqual => {
+                let predicate = match op {
+                    Token::Equals => inkwell::FloatPredicate::OEQ,
+                    Token::NotEquals => inkwell::FloatPredicate::ONE,
+                    Token::GreaterThan => inkwell::FloatPredicate::OGT,
+                    Token::GreaterThanOrEqual => inkwell::FloatPredicate::OGE,
+                    Token::LessThan => inkwell::FloatPredicate::OLT,
+                    Token::LessThanOrEqual => inkwell::FloatPredicate::OLE,
+                    _ => unreachable!()
+                };
+
+                // First create the comparison
+                let compare_result = self.builder.build_float_compare(predicate, lhs, rhs, &name)
+                    .expect("float compare failed");
+
+                // Convert the boolean result (IntValue) to a float
+                self.builder.build_unsigned_int_to_float(
+                    compare_result,
+                    self.context.f64_type(),
+                    "bool_to_float"
+                ).expect("Failed to convert comparison result to float")
+            },
+            _ => panic!("Cannot complete operation with type: {:?}", op),
+        }
+    }
+
+    fn convert_to_float(&self, lhs: BasicValueEnum<'ctx>, rhs: BasicValueEnum<'ctx>) -> (FloatValue<'ctx>, FloatValue<'ctx>) {
+        let lhs_float = match lhs {
+            BasicValueEnum::IntValue(int) => {
+                self.builder
+                    .build_signed_int_to_float(int, self.context.f64_type(), "int_to_float_lhs")
+                    .expect("Failed to convert LHS integer to float")
+            },
+            BasicValueEnum::FloatValue(float) => float,
+            _ => panic!("Unsupported type for float conversion: {:?}", lhs),
+        };
+
+        let rhs_float = match rhs {
+            BasicValueEnum::IntValue(int) => {
+                self.builder
+                    .build_signed_int_to_float(int, self.context.f64_type(), "int_to_float_rhs")
+                    .expect("Failed to convert RHS integer to float")
+            },
+            BasicValueEnum::FloatValue(float) => float,
+            _ => panic!("Unsupported type for float conversion: {:?}", rhs),
+        };
+
+        (lhs_float, rhs_float)
     }
 
     fn build_load(&mut self, id: String) -> inkwell::values::BasicValueEnum<'ctx> {
@@ -305,5 +431,9 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         let _ = self.builder.build_return(Some(&self.context.i32_type().const_int(0, false)));
 
+    }
+
+    fn compile_if_statement(&mut self, condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: ElseStatement) {
+        let cond = self.compile_expr(condition);
     }
 }

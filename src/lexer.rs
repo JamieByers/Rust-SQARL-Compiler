@@ -330,7 +330,7 @@ impl<'a> Lexer<'a> {
                     Token::Equals
                 }
             }
-            '<' => {
+            '>' => {
                 if *self.chars.peek().unwrap() == '=' {
                     self.advance();
                     Token::GreaterThanOrEqual
@@ -338,7 +338,7 @@ impl<'a> Lexer<'a> {
                     Token::GreaterThan
                 }
             },
-            '>' => {
+            '<' => {
                 if *self.chars.peek().unwrap() == '=' {
                     self.advance();
                     Token::LessThanOrEqual
