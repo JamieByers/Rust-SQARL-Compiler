@@ -122,7 +122,7 @@ impl Expression {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Display)]
 pub enum Type {
     Str,
     Strl(usize),
@@ -146,13 +146,13 @@ pub enum Type {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ElseIfStatement {
-    condition: Expression,
-    code_block: Vec<AstNode>,
+    pub condition: Expression,
+    pub code_block: Vec<AstNode>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ElseStatement {
-    code_block: Vec<AstNode>,
+    pub code_block: Vec<AstNode>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -507,7 +507,7 @@ impl<'a> Parser<'a> {
 
     fn parse_block_without_advance(&mut self) -> Vec<AstNode> {
         let mut block = Vec::new();
-        while !matches!(self.current_token, Token::End | Token::Else | Token::ElseIf) {
+        while !matches!(self.current_token, Token::End | Token::Else | Token::ElseIf | Token::Eof) {
             let node = self.next_token();
             block.push(node);
         }
@@ -545,19 +545,13 @@ impl<'a> Parser<'a> {
     }
 
     fn handle_else(&mut self) -> (Vec<ElseIfStatement>, Option<ElseStatement>) {
-        println!("Running handle else");
         let mut elif_statements: Vec<ElseIfStatement> = Vec::new();
         let mut else_statement: Option<ElseStatement> = None;
 
         while self.current_token == Token::Else {
-            println!("running while else: {}", self.current_token);
             self.advance(); // skip ELSE
 
             if self.current_token == Token::If {
-                println!(
-                    "running while else after skipping ELSE: {}",
-                    self.current_token
-                );
                 let elif_statement = self.else_if_statement();
                 elif_statements.push(elif_statement);
             } else {
@@ -565,9 +559,11 @@ impl<'a> Parser<'a> {
                 else_statement = Some(ElseStatement {
                     code_block: else_block,
                 });
+                break
             }
         }
 
+        println!("handle else: {}", format!("elif: {:?} else: {:?}", elif_statements, else_statement));
         (elif_statements, else_statement)
     }
 
@@ -583,9 +579,8 @@ impl<'a> Parser<'a> {
     }
 
     fn else_statement(&mut self) -> Vec<AstNode> {
-        let elif_block = self.parse_block_without_advance();
-
-        elif_block
+        let else_block = self.parse_block_without_advance();
+        else_block
     }
 
     fn while_statement(&mut self) -> AstNode {

@@ -1,5 +1,5 @@
 use core::panic;
-use std::result;
+use inkwell::basic_block::BasicBlock;
 use inkwell::values::FloatValue;
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
@@ -18,25 +18,46 @@ pub struct Variable<'ctx> {
     parsed_type: Type,
 }
 
+pub struct Temps {
+    temp_counter: i32,
+    if_temp_counter: i32,
+}
+
+impl Temps {
+    fn new() -> Self {
+        Temps {
+            temp_counter: 0,
+            if_temp_counter: 0,
+        }
+    }
+}
+
 pub struct CodeGenerator<'ctx> {
     pub context: &'ctx Context,
     builder: Builder<'ctx>,
     pub module: inkwell::module::Module<'ctx>,
     pub variables: HashMap<String, Variable<'ctx>>,
-    temp_counter: i32,
+    temps: Temps,
+    current_func: &'ctx str,
+    current_block: Option<BasicBlock<'ctx>>,
 }
 
 impl<'ctx> CodeGenerator<'ctx> {
     pub fn new(context: &'ctx Context, module_name: &str) -> Self {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
+        let temps = Temps::new();
+        let current_func = "main";
+        let current_block = None;
 
         CodeGenerator {
             context,
             builder,
             module,
             variables: HashMap::new(),
-            temp_counter: 0,
+            temps,
+            current_func,
+            current_block,
         }
     }
 
@@ -46,7 +67,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             _ => panic!("Expected program node")
         };
 
-        self.setup_compiler(input.clone());
+        self.create_print_func();
         self.create_main_func();
 
         for node in input {
@@ -54,7 +75,6 @@ impl<'ctx> CodeGenerator<'ctx> {
         }
 
         self.add_return_to_main();
-        self.module.print_to_stderr();
     }
 
     fn match_node(&mut self, node: AstNode) {
@@ -62,16 +82,16 @@ impl<'ctx> CodeGenerator<'ctx> {
             AstNode::VariableDeclaration { identifier, value, var_type } => self.compile_variable_declaration(identifier, value, var_type),
             AstNode::VariableAssignment { identifier, value } => self.compile_variable_assignment(identifier, value),
             AstNode::SendToDisplay { value } => self.compile_print(value),
-            // AstNode::IfStatement { condition, code_block, elif_statements, else_statement } => self.compile_if_statement(condition, code_block, elif_statements, else_statement),
+            AstNode::IfStatement { condition, code_block, elif_statements, else_statement } => self.compile_if_statement(condition, code_block, elif_statements, Some(else_statement).expect("No else_statement")),
             _ => panic!("Cannot compile with node: {}", node)
         }
     }
 
-    // fn compile_block(&mut self, nodes: Vec<AstNode>) {
-    //     for node in nodes {
-    //         self.match_node(node);
-    //     }
-    // }
+    fn compile_block(&mut self, nodes: Vec<AstNode>) {
+        for node in nodes {
+            self.match_node(node);
+        }
+    }
 
 
     // write sys code to run this automatically -
@@ -80,10 +100,13 @@ impl<'ctx> CodeGenerator<'ctx> {
     // (./program)
 
 
-    pub fn output(&mut self) {
-        let output_file = "output.ll";
-        let _ = self.module.print_to_file(output_file);
+    pub fn output(&mut self, file_name: &str) -> String {
+        let output_file = format!("{}.ll", file_name);
+        let _ = self.module.print_to_file(output_file.clone());
         println!("LLVM IR written to {}", output_file);
+
+        self.module.print_to_stderr();
+        self.module.print_to_string().to_string()
     }
 
     pub fn create_main_func(&mut self) {
@@ -92,32 +115,72 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         let function = self.module.add_function("main", fn_type, None);
         let entry = self.context.append_basic_block(function, "entry");
+        self.current_block = Some(entry);
 
         self.builder.position_at_end(entry);
     }
 
+    fn create_print_func(&mut self) {
+        let i32_type = self.context.ptr_type(inkwell::AddressSpace::default());
+        let printf_type = i32_type.fn_type(&[self.context.ptr_type(inkwell::AddressSpace::default()).into()], true);
 
-    fn setup_compiler(&mut self, input: Vec<Box<AstNode>>) {
-        if input.iter().any(|node| matches!(&**node, AstNode::SendToDisplay { .. })) {
-            let i32_type = self.context.ptr_type(inkwell::AddressSpace::default());
-            let printf_type = i32_type.fn_type(&[self.context.ptr_type(inkwell::AddressSpace::default()).into()], true);
-
-            let _printf = match self.module.get_function("printf") {
-                Some(func) => func,
-                _  => self.module.add_function("printf", printf_type, None),
-            };
-        }
+        let _printf = match self.module.get_function("printf") {
+            Some(func) => func,
+            _  => self.module.add_function("printf", printf_type, None),
+        };
     }
 
     fn get_temp(&mut self, identifier: &str) -> String {
-        self.temp_counter += 1;
-        format!("{}{}", identifier, self.temp_counter)
+        self.temps.temp_counter += 1;
+        format!("{}{}", identifier, self.temps.temp_counter)
     }
 
+    fn get_if_temp(&mut self, identifier: &str) -> String {
+        self.temps.if_temp_counter += 1;
+        format!("{}{}", identifier, self.temps.if_temp_counter)
+    }
+
+
     fn compile_print(&mut self, value: Expression) {
-        let printf = self.module.get_function("printf").expect("printf function does not exist: print compilation error");
+        let printf = self.module.get_function("printf").unwrap_or_else(|| {
+            self.create_print_func();
+            self.module.get_function("printf").expect("printf function does not exist: print compilation error")
+        });
 
         match value {
+            Expression::StringLiteral(s) => {
+                let str_format = self.builder.build_global_string_ptr("%s\n", "format_str");
+                let str_temp = self.get_temp("display_str_temp");
+                let var_type = Type::Strl(s.len()+1);
+                self.compile_variable_declaration(
+                    Expression::Identifier(str_temp.clone()),
+                    Expression::StringLiteral(s.clone()),
+                    var_type
+                );
+
+                let temp_var = self.variables.get(&str_temp).expect("Failed to find temp variable");
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[str_format.expect("As pointer value failed?").as_pointer_value().into(),
+                      temp_var.alloca.into()],
+                    "printf"
+                );
+            },
+
+            Expression::IntegerLiteral(v) => {
+                let str_format = self.builder.build_global_string_ptr("%s\n", "format_str");
+                let val = BasicValueEnum::IntValue(self.context.i32_type().const_int(v as u64, false));
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[str_format.expect("As pointer value failed?").as_pointer_value().into(), val.into()],
+                    "printf"
+                );
+
+            },
+
+
             Expression::BinaryOp(_, _, _) => {
                 let result = self.compile_expr(value);
 
@@ -151,11 +214,8 @@ impl<'ctx> CodeGenerator<'ctx> {
                     Type::Strl(_) => self.builder.build_global_string_ptr("%s\n", "format_str"),
                     Type::Integer => self.builder.build_global_string_ptr("%d\n", "format_str"),
                     Type::FloatType => self.builder.build_global_string_ptr("%f\n", "format_str"),
-                    _ => {
-                        match variable.var_type {
-                            _ => panic!("Unsupported type for printing")
-                        }
-                    }
+                    _ =>  panic!("Unsupported type for printing")
+
                 }.expect("could not build format string");
 
                 let var_alloca = variable.alloca.clone();
@@ -400,8 +460,8 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     fn build_load(&mut self, id: String) -> inkwell::values::BasicValueEnum<'ctx> {
-        self.temp_counter += 1;
-        let temp = format!("temp{}_load", self.temp_counter);
+        self.temps.temp_counter += 1;
+        let temp = format!("temp{}_load", self.temps.temp_counter);
         let variable = self.variables.get(&id).expect("Could not get either alloca or type in build load");
         let value = self.builder.build_load(variable.var_type, variable.alloca, &temp).expect("Couldnt build load").into();
         value
@@ -424,16 +484,92 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     fn add_return_to_main(&mut self) {
-        let function = self.module.get_function("main").expect("Could not get main function in ret function");
-        let entry = function.get_first_basic_block().expect("No entry block found");
-
-        self.builder.position_at_end(entry);
-
         let _ = self.builder.build_return(Some(&self.context.i32_type().const_int(0, false)));
-
     }
 
-    fn compile_if_statement(&mut self, condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: ElseStatement) {
-        let cond = self.compile_expr(condition);
+
+    fn move_to_block(&mut self, entry: BasicBlock<'ctx>) {
+        self.current_block = Some(entry);
+        self.builder.position_at_end(entry);
+    }
+
+
+    fn compile_if_statement(&mut self, condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: Option<ElseStatement>) {
+        let function = self.module.get_function(self.current_func).expect("Could not get function");
+
+        let merge_bb = self.context.append_basic_block(function, &self.get_if_temp("merge"));
+        let if_then_bb = self.context.append_basic_block(function, &self.get_if_temp("if_then"));
+
+        let mut elif_cond_blocks = vec![];
+        let mut elif_body_blocks = vec![];
+        for i in 0..elif_statements.len() {
+            elif_cond_blocks.push(self.context.append_basic_block(function, &format!("elif_cond{}", i)));
+            elif_body_blocks.push(self.context.append_basic_block(function, &format!("elif_body{}", i)));
+        }
+
+        let else_bb = if else_statement.is_some() {
+            Some(self.context.append_basic_block(function, &self.get_if_temp("else")))
+        } else {
+            None
+        };
+
+        let cmp = self.compile_expr(condition);
+        let comparison = match cmp {
+            BasicValueEnum::IntValue(v) => v,
+            _ => panic!("Condition should evaluate to an integer")
+        };
+
+        let next_block = if !elif_cond_blocks.is_empty() {
+            elif_cond_blocks[0]
+        } else if let Some(else_block) = else_bb {
+            else_block
+        } else {
+            merge_bb
+        };
+
+        self.builder.build_conditional_branch(comparison, if_then_bb, next_block)
+            .expect("Failed to build conditional branch");
+
+        self.move_to_block(if_then_bb);
+        self.compile_block(code_block);
+        self.builder.build_unconditional_branch(merge_bb)
+            .expect("Failed to build unconditional branch");
+
+        for (i, elif_statement) in elif_statements.iter().enumerate() {
+            self.move_to_block(elif_cond_blocks[i]);
+
+            let elif_cmp = self.compile_expr(elif_statement.clone().condition);
+            let elif_comparison = match elif_cmp {
+                BasicValueEnum::IntValue(v) => v,
+                _ => panic!("Elif condition should evaluate to an integer")
+            };
+
+            let next_block = if i < elif_cond_blocks.len() - 1 {
+                elif_cond_blocks[i + 1]
+            } else if let Some(else_block) = else_bb {
+                else_block
+            } else {
+                merge_bb
+            };
+
+            self.builder.build_conditional_branch(elif_comparison, elif_body_blocks[i], next_block)
+                .expect("Failed to build elif conditional branch");
+
+            self.move_to_block(elif_body_blocks[i]);
+            self.compile_block(elif_statement.clone().code_block);
+            self.builder.build_unconditional_branch(merge_bb)
+                .expect("Failed to build elif body unconditional branch");
+        }
+
+        if let Some(else_block) = else_bb {
+            if let Some(else_stmt) = else_statement {
+                self.move_to_block(else_block);
+                self.compile_block(else_stmt.code_block);
+                self.builder.build_unconditional_branch(merge_bb)
+                    .expect("Failed to build else unconditional branch");
+            }
+        }
+
+        self.move_to_block(merge_bb);
     }
 }
