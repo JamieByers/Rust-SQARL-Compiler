@@ -52,7 +52,11 @@ pub enum AstNode {
         identifier: Token,
         params: Vec<Parameter>,
         code_block: Vec<AstNode>,
-        return_type: Token,
+        return_type: Type,
+    },
+    FunctionCall {
+        identifier: Box<Expression>,
+        parameters: Vec<Expression>
     },
     ProcedureDeclaration {
         identifier: Token,
@@ -116,6 +120,11 @@ impl Expression {
     pub fn value(&mut self) -> String {
         match self {
             Expression::Identifier(id) => id.clone(),
+            Expression::StringLiteral(s) => s.clone(),
+            Expression::IntegerLiteral(i) => i.clone().to_string(),
+            Expression::FloatLiteral(f) => f.clone().to_string(),
+            Expression::ArrayLiteral(a) => format!("{:?}", a).to_string(),
+            Expression::BooleanLiteral(b) => b.clone().to_string(),
 
             _ => panic!("Cannot get value from expression")
         }
@@ -157,8 +166,8 @@ pub struct ElseStatement {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Parameter {
-    param_type: Type,
-    identifier: Expression,
+    pub param_type: Type,
+    pub identifier: Expression,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -207,6 +216,7 @@ impl<'a> Parser<'a> {
             Token::Declare => self.variable_declaration(),
             Token::Set => self.variable_assignment(),
             Token::Send => self.send_to_display(),
+            Token::Identifier(_) => self.handle_lone_indentifier(),
             Token::If => self.if_statement(),
             Token::For => self.handle_for_loops(),
             Token::While => self.while_statement(),
@@ -376,6 +386,42 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn handle_lone_indentifier(&mut self) -> AstNode {
+        println!("self.current {:?}", self.current_token);
+        let expr = self.expression();
+        println!("expr {:?}", expr);
+
+        match expr {
+            Ok(Expression::FunctionCall { name, parameters }) => {
+                AstNode::FunctionCall { identifier: name, parameters }
+            },
+            _ => panic!("Lone identifier cannot be parsed"),
+        }
+    }
+
+    // fn handle_standard_algorithms(&mut self, identifier: Expression, params: Vec<Expression>) -> Option<Expression> {
+    //     let id = match identifier {
+    //         Expression::Identifier(id) => id,
+    //         _ => panic!("Expected identifier"),
+    //     };
+
+    //     match id.as_str() {
+    //         "str" => {
+    //             let mut param = params[0].clone();
+    //             let mut value = param.value();
+    //             if let Expression::Identifier(ref v) = param {
+    //                 if let Some((val, _ty)) = self.variables.get(v) {
+    //                     value = (val.clone().value()).to_string();
+    //                 } else {
+    //                     panic!("Couldnt get value ty");
+    //                 };
+    //             }
+    //             Some(Expression::StringLiteral(value))
+    //         }
+    //         _ => return None
+    //     }
+    // }
+
     fn method_call(&mut self, prefix: Expression) -> Result<Expression, String> {
         self.advance(); // skipping .
         let postfix = self.expression()?;
@@ -493,6 +539,19 @@ impl<'a> Parser<'a> {
                 variable_type.clone()
             }
             _ => Type::Other(t.to_string()),
+        }
+    }
+
+    fn token_type_infer(&mut self, token: Token) -> Type {
+        match token {
+            Token::Str => Type::Str,
+            Token::Integer => Type::Integer,
+            Token::FloatType => Type::FloatType,
+            Token::Boolean => Type::Boolean,
+            Token::Record => Type::Record,
+            Token::Character => Type::Character,
+            Token::Array => Type::Array,
+            _ => panic!("Could not token type infer")
         }
     }
 
@@ -728,7 +787,8 @@ impl<'a> Parser<'a> {
         self.advance(); // skip )
 
         self.advance(); // skip RETURN
-        let return_type = Some(self.current_token.clone());
+        let ret_type_token = Some(self.current_token.clone());
+        let return_type = self.token_type_infer(ret_type_token.expect("couldnt get ret type token"));
 
         let code_block = self.parse_block();
 
@@ -736,7 +796,7 @@ impl<'a> Parser<'a> {
             identifier,
             params,
             code_block,
-            return_type: return_type.unwrap(),
+            return_type,
         }
     }
 

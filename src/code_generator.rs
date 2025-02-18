@@ -1,6 +1,6 @@
 use core::panic;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::FloatValue;
+use inkwell::values::{ArrayValue, FloatValue, FunctionValue};
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -8,7 +8,7 @@ use inkwell::values::PointerValue;
 use inkwell::builder::Builder;
 use std::collections::HashMap;
 
-use crate::parser::{AstNode, ElseIfStatement, ElseStatement, Expression, Type};
+use crate::parser::{AstNode, ElseIfStatement, ElseStatement, Expression, Parameter, Type};
 
 
 pub struct Variable<'ctx> {
@@ -21,6 +21,7 @@ pub struct Variable<'ctx> {
 pub struct Temps {
     temp_counter: i32,
     if_temp_counter: i32,
+    while_loop_counter: i32,
 }
 
 impl Temps {
@@ -28,6 +29,7 @@ impl Temps {
         Temps {
             temp_counter: 0,
             if_temp_counter: 0,
+            while_loop_counter: 0,
         }
     }
 }
@@ -38,7 +40,7 @@ pub struct CodeGenerator<'ctx> {
     pub module: inkwell::module::Module<'ctx>,
     pub variables: HashMap<String, Variable<'ctx>>,
     temps: Temps,
-    current_func: &'ctx str,
+    current_func: Option<FunctionValue<'ctx>>,
     current_block: Option<BasicBlock<'ctx>>,
 }
 
@@ -47,7 +49,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
         let temps = Temps::new();
-        let current_func = "main";
+        let current_func = None;
         let current_block = None;
 
         CodeGenerator {
@@ -83,6 +85,10 @@ impl<'ctx> CodeGenerator<'ctx> {
             AstNode::VariableAssignment { identifier, value } => self.compile_variable_assignment(identifier, value),
             AstNode::SendToDisplay { value } => self.compile_print(value),
             AstNode::IfStatement { condition, code_block, elif_statements, else_statement } => self.compile_if_statement(condition, code_block, elif_statements, Some(else_statement).expect("No else_statement")),
+            AstNode::WhileStatement { condition, code_block } => self.compile_while_loop( condition, code_block ),
+            AstNode::FunctionDeclaration { identifier, params, code_block, return_type } => self.compile_function_declaration( identifier, params, code_block, return_type ),
+            AstNode::FunctionCall { identifier, parameters } => self.compile_function_call( identifier, parameters ),
+            AstNode::ReturnStatement { value }  => self.compile_return_statement( value ),
             _ => panic!("Cannot compile with node: {}", node)
         }
     }
@@ -116,6 +122,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         let function = self.module.add_function("main", fn_type, None);
         let entry = self.context.append_basic_block(function, "entry");
         self.current_block = Some(entry);
+        self.current_func = Some(function);
 
         self.builder.position_at_end(entry);
     }
@@ -140,6 +147,10 @@ impl<'ctx> CodeGenerator<'ctx> {
         format!("{}{}", identifier, self.temps.if_temp_counter)
     }
 
+    fn get_while_temp(&mut self, identifier: &str) -> String {
+        self.temps.while_loop_counter += 1;
+        format!("{}{}", identifier, self.temps.while_loop_counter)
+    }
 
     fn compile_print(&mut self, value: Expression) {
         let printf = self.module.get_function("printf").unwrap_or_else(|| {
@@ -185,21 +196,41 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let result = self.compile_expr(value);
 
                 // Create appropriate format string based on the result type
-                let format_str = match result {
+                match result {
+                    BasicValueEnum::ArrayValue(av) => {
+                        let temp = self.get_temp("temp");
+                        let inferred_type = self.infer_type(BasicValueEnum::ArrayValue(av));
+                        let ty = self.llvm_type_converter(inferred_type);
+
+                        let alloca = self.builder.build_alloca(ty, &temp).expect("ERROR with alloca in var dec");
+                        self.builder.build_store(alloca, av).expect("Error building store");
+
+                        let format_str = self.builder.build_global_string_ptr("%s\n", "format_str").expect("ERROR with format str in binary op");
+                        let _ = self.builder.build_call(
+                            printf,
+                            &[format_str.as_pointer_value().into(), alloca.into()],
+                            "printf"
+                        );
+                    }
                     BasicValueEnum::IntValue(_) => {
-                        self.builder.build_global_string_ptr("%d\n", "format_str")
+                        let format_str = self.builder.build_global_string_ptr("%d\n", "format_str").expect("ERROR with format str in binary op");
+                        let _ = self.builder.build_call(
+                            printf,
+                            &[format_str.as_pointer_value().into(), result.into()],
+                            "printf"
+                        );
                     },
                     BasicValueEnum::FloatValue(_) => {
-                        self.builder.build_global_string_ptr("%f\n", "format_str")
+                        let format_str = self.builder.build_global_string_ptr("%f\n", "format_str").expect("ERROR with format str in binary op");
+                        let _ = self.builder.build_call(
+                            printf,
+                            &[format_str.as_pointer_value().into(), result.into()],
+                            "printf"
+                        );
                     },
                     _ => panic!("Unsupported type for printing binary operation result")
-                }.expect("Could not build format string");
+                }
 
-                let _ = self.builder.build_call(
-                    printf,
-                    &[format_str.as_pointer_value().into(), result.into()],
-                    "printf"
-                );
             },
 
             Expression::Identifier(identifier) => {
@@ -251,6 +282,15 @@ impl<'ctx> CodeGenerator<'ctx> {
         match ty {
             BasicValueEnum::IntValue(..) => Type::Integer,
             BasicValueEnum::FloatValue(..) => Type::FloatType,
+            BasicValueEnum::ArrayValue(array) => {
+                // For string literals, which are represented as arrays of i8
+                if array.get_type().get_element_type().is_int_type() {
+                    let length = array.get_type().len();
+                    Type::Strl(length as usize)
+                } else {
+                    panic!("Unsupported array type for inference")
+                }
+            },
             _ => panic!("Cannot infer type {:?}", ty)
         }
     }
@@ -342,8 +382,8 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     fn compile_binary_op(&mut self, left: Expression, op: Token, right: Expression ) -> inkwell::values::BasicValueEnum<'ctx> {
-        let lft = self.compile_expr(left);
-        let rght = self.compile_expr(right);
+        let lft = self.compile_expr(left.clone());
+        let rght = self.compile_expr(right.clone());
 
         match (lft, rght) {
             (
@@ -369,7 +409,6 @@ impl<'ctx> CodeGenerator<'ctx> {
                             _ => unreachable!()
                         };
 
-                        // First create the comparison
                         let compare_result = self.builder.build_int_compare(predicate, lhs, rhs, &name)
                             .expect("int compare failed");
                         compare_result
@@ -393,13 +432,27 @@ impl<'ctx> CodeGenerator<'ctx> {
                     let result = self.float_match(lhs, rhs, op);
 
                     BasicValueEnum::FloatValue(result)
-                },
+            },
 
-            _ => panic!("Addition cannot support different types or type used for addition"),
+            _ => {
+                match (left.clone(), right.clone()) {
+                    (Expression::StringLiteral(lhss), Expression::StringLiteral(rhss)) => {
+                        match op {
+                            Token::Addition => {
+                                let combined_string = lhss + &rhss;
+                                inkwell::values::BasicValueEnum::ArrayValue(self.context.const_string(combined_string.as_bytes(), true))
+                            }
+                            _ => panic!("Cannot use operator on two strings: {:?}", op),
+                        }
+                    },
+                    _ => panic!("Cannot compile binary op")
+                }
+            }
         }
 
     }
-
+// panic!("Addition cannot support different types or type used for addition"),
+    //
     fn float_match(&mut self, lhs: FloatValue<'ctx>, rhs: FloatValue<'ctx>, op: Token) -> FloatValue<'ctx> {
         let name = self.get_temp("temp");
         match op {
@@ -420,11 +473,9 @@ impl<'ctx> CodeGenerator<'ctx> {
                     _ => unreachable!()
                 };
 
-                // First create the comparison
                 let compare_result = self.builder.build_float_compare(predicate, lhs, rhs, &name)
                     .expect("float compare failed");
 
-                // Convert the boolean result (IntValue) to a float
                 self.builder.build_unsigned_int_to_float(
                     compare_result,
                     self.context.f64_type(),
@@ -493,9 +544,8 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.builder.position_at_end(entry);
     }
 
-
     fn compile_if_statement(&mut self, condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: Option<ElseStatement>) {
-        let function = self.module.get_function(self.current_func).expect("Could not get function");
+        let function = self.current_func.expect("Could not get function from self.current_func");
 
         let merge_bb = self.context.append_basic_block(function, &self.get_if_temp("merge"));
         let if_then_bb = self.context.append_basic_block(function, &self.get_if_temp("if_then"));
@@ -572,4 +622,113 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         self.move_to_block(merge_bb);
     }
+
+    fn compile_while_loop(&mut self, condition: Expression, code_block: Vec<AstNode>) {
+        let function = self.current_func.expect("Couldnt get current func");
+
+        let name = self.get_while_temp("loop");
+        let loop_branch = self.context.append_basic_block(function, &name);
+        let _ = self.builder.build_unconditional_branch(loop_branch);
+        self.move_to_block(loop_branch);
+
+        let cmp = self.compile_expr(condition);
+        let comparison = match cmp {
+            BasicValueEnum::IntValue(v) => v,
+            _ => panic!("could not get int value from cmp")
+        };
+
+        // create merge branch
+        let merge = self.get_while_temp("merge");
+        let merge_block = self.context.append_basic_block(function, &merge);
+
+        // create while loop body branch
+        let while_temp = self.get_while_temp("loop_body");
+        let while_block = self.context.append_basic_block(function, &while_temp);
+
+        // write conditional br in %loop_branch
+        let _ = self.builder.build_conditional_branch(comparison, while_block, merge_block);
+
+        // write while loop body
+        self.move_to_block(while_block);
+        self.compile_block(code_block);
+        let _ = self.builder.build_unconditional_branch(loop_branch);
+
+        self.move_to_block(merge_block);
+    }
+
+
+    fn compile_function_declaration(&mut self, identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode>, return_type: Type) {
+        let prev_block = self.current_block;
+        let prev_func = self.current_func;
+
+        let function_name = match identifier {
+            Token::Identifier(id) => id,
+            _ => panic!("Expected token"),
+        };
+
+        let mut param_types = Vec::new();
+        for param in params.clone() {
+           let param_type = param.param_type;
+            let pty = self.llvm_type_converter(param_type);
+            param_types.push(pty.into());
+        }
+
+        let ret_type = self.llvm_type_converter(return_type);
+        let fn_type = match ret_type {
+            BasicTypeEnum::IntType(t) => t.fn_type(&param_types, false),
+            BasicTypeEnum::FloatType(t) => t.fn_type(&param_types, false),
+            BasicTypeEnum::ArrayType(t) => t.fn_type(&param_types, false),
+            // Add other cases as needed
+            _ => panic!("Unsupported return type for function"),
+        };
+
+        let function = self.module.add_function(&function_name, fn_type, None);
+        let entry_block = function.get_last_basic_block().unwrap_or_else(|| self.context.append_basic_block(function, "entry"));
+        self.move_to_block(entry_block);
+
+        // save params as variables
+
+        for (i, param) in params.iter().enumerate() {
+            let param_name = match &param.identifier {
+                Expression::Identifier(name) => name.clone(),
+                _ => panic!("Expected identifier for parameter"),
+            };
+
+            let param_value = function.get_nth_param(i as u32)
+                .expect("Failed to get parameter value");
+
+            let param_type = self.llvm_type_converter(param.param_type.clone());
+            let alloca = self.builder.build_alloca(param_type, &param_name)
+                .expect("Failed to create alloca for parameter");
+
+            self.builder.build_store(alloca, param_value)
+                .expect("Failed to store parameter value");
+
+            let variable = Variable {
+                alloca,
+                var_type: param_type,
+                var_counter: 0,
+                parsed_type: param.param_type.clone(),
+            };
+
+            self.variables.insert(param_name, variable);
+        }
+
+        self.compile_block(code_block);
+
+
+        self.module.get_function(prev_func.expect("Couldnt get prev func").get_name().to_str().expect("Couldnt turn into str"));
+        self.builder.position_at_end(prev_block.expect("Couldnt get prev block"));
+    }
+
+    fn compile_return_statement(&mut self, value: Expression) {
+        let ret_value = self.compile_expr(value);
+
+        let _ = self.builder.build_return(Some(&ret_value));
+    }
+
+    fn compile_function_call(&mut self, identifier: Expression, params: Vec<Expression>) {
+
+    }
 }
+
