@@ -1,6 +1,6 @@
 use core::panic;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{ArrayValue, FloatValue, FunctionValue};
+use inkwell::values::{ArrayValue, BasicMetadataValueEnum, FloatValue, FunctionValue};
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -39,6 +39,7 @@ pub struct CodeGenerator<'ctx> {
     builder: Builder<'ctx>,
     pub module: inkwell::module::Module<'ctx>,
     pub variables: HashMap<String, Variable<'ctx>>,
+    pub functions: HashMap<String, FunctionValue<'ctx>>,
     temps: Temps,
     current_func: Option<FunctionValue<'ctx>>,
     current_block: Option<BasicBlock<'ctx>>,
@@ -49,6 +50,8 @@ impl<'ctx> CodeGenerator<'ctx> {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
         let temps = Temps::new();
+        let variables = HashMap::new();
+        let functions = HashMap::new();
         let current_func = None;
         let current_block = None;
 
@@ -56,7 +59,8 @@ impl<'ctx> CodeGenerator<'ctx> {
             context,
             builder,
             module,
-            variables: HashMap::new(),
+            variables,
+            functions,
             temps,
             current_func,
             current_block,
@@ -719,6 +723,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         self.module.get_function(prev_func.expect("Couldnt get prev func").get_name().to_str().expect("Couldnt turn into str"));
         self.builder.position_at_end(prev_block.expect("Couldnt get prev block"));
+        self.functions.insert(function_name, function);
     }
 
     fn compile_return_statement(&mut self, value: Expression) {
@@ -727,7 +732,23 @@ impl<'ctx> CodeGenerator<'ctx> {
         let _ = self.builder.build_return(Some(&ret_value));
     }
 
-    fn compile_function_call(&mut self, identifier: Expression, params: Vec<Expression>) {
+    fn compile_function_call(&mut self, identifier: Box<Expression>, params: Vec<Expression>) {
+        let function_name = match *identifier {
+            Expression::Identifier(id) => id,
+            _ => panic!("Couldnt get function identifier for function call"),
+        };
+
+        let name = self.get_temp("function_result");
+
+        let function = self.functions.get(&function_name).expect(&format!("Function '{}' not found", function_name)).clone();
+
+        let mut compiled_args: Vec<BasicMetadataValueEnum<'ctx>> = Vec::new();
+        for param in params {
+            let compiled_param = self.compile_expr(param);
+            compiled_args.push(compiled_param.into());
+        }
+
+        let _ = self.builder.build_call(function, &compiled_args, &name);
 
     }
 }
