@@ -11,10 +11,10 @@ entry:
   ret i32 0
 }
 
-define i32 @func(ptr %0) {
+define i32 @func([256 x i8] %0) {
 entry:
-  %param1 = alloca ptr, align 8
-  store ptr %0, ptr %param1, align 8
+  %param1 = alloca [256 x i8], align 1
+  store [256 x i8] %0, ptr %param1, align 1
   %printf = call ptr (ptr, ...) @printf(ptr @format_str, ptr %param1)
   ret i32 1
 }

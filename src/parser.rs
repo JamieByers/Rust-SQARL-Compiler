@@ -126,7 +126,7 @@ impl Expression {
             Expression::ArrayLiteral(a) => format!("{:?}", a).to_string(),
             Expression::BooleanLiteral(b) => b.clone().to_string(),
 
-            _ => panic!("Cannot get value from expression")
+            _ => panic!("Cannot get value from expression, expr: {:?}", self)
         }
     }
 }
@@ -399,29 +399,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // fn handle_standard_algorithms(&mut self, identifier: Expression, params: Vec<Expression>) -> Option<Expression> {
-    //     let id = match identifier {
-    //         Expression::Identifier(id) => id,
-    //         _ => panic!("Expected identifier"),
-    //     };
-
-    //     match id.as_str() {
-    //         "str" => {
-    //             let mut param = params[0].clone();
-    //             let mut value = param.value();
-    //             if let Expression::Identifier(ref v) = param {
-    //                 if let Some((val, _ty)) = self.variables.get(v) {
-    //                     value = (val.clone().value()).to_string();
-    //                 } else {
-    //                     panic!("Couldnt get value ty");
-    //                 };
-    //             }
-    //             Some(Expression::StringLiteral(value))
-    //         }
-    //         _ => return None
-    //     }
-    // }
-
     fn method_call(&mut self, prefix: Expression) -> Result<Expression, String> {
         self.advance(); // skipping .
         let postfix = self.expression()?;
@@ -495,12 +472,14 @@ impl<'a> Parser<'a> {
             .expression()
             .expect("Failed parsing expression in variable declaration");
 
+
         if var_type == Type::None || var_type == Type::Str {
             var_type = self.type_infer(value.clone());
         } else if var_type == Type::Other("BinaryOp".to_string()) {
             var_type = Type::BinaryOp
         }
 
+        println!("IDENTIFIER {}", identifier);
         let id = identifier.clone().value();
 
         self.variables

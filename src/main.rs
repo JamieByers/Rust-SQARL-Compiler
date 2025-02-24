@@ -78,7 +78,7 @@ mod test {
     create_test!(basic_string_test, "Hello world!");
     create_test!(variable_string_test, "Hello world!");
 
-    // create_test!(function_string_test, "Hello world!");
+    create_test!(function_string_test, "Hello world!");
     create_test!(function_integer_test, "123");
     create_test!(function_float_test, "123.123000");
     create_test!(function_boolean_test, "1");
