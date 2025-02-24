@@ -4,3 +4,5 @@ FUNCTION func(STRING param1) RETURNS INTEGER
 END FUNCTION
 
 func("Hello world!")
+
+

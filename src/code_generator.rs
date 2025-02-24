@@ -1,6 +1,6 @@
 use core::panic;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{ArrayValue, BasicMetadataValueEnum, FloatValue, FunctionValue};
+use inkwell::values::{BasicMetadataValueEnum, FloatValue, FunctionValue};
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -10,13 +10,14 @@ use std::collections::HashMap;
 
 use crate::parser::{AstNode, ElseIfStatement, ElseStatement, Expression, Parameter, Type};
 
-
+#[derive(Debug)]
 pub struct Variable<'ctx> {
     alloca: PointerValue<'ctx>,
     var_type: BasicTypeEnum<'ctx>,
     var_counter: i32,
     parsed_type: Type,
 }
+
 
 pub struct Temps {
     temp_counter: i32,
@@ -91,6 +92,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             AstNode::IfStatement { condition, code_block, elif_statements, else_statement } => self.compile_if_statement(condition, code_block, elif_statements, Some(else_statement).expect("No else_statement")),
             AstNode::WhileStatement { condition, code_block } => self.compile_while_loop( condition, code_block ),
             AstNode::FunctionDeclaration { identifier, params, code_block, return_type } => self.compile_function_declaration( identifier, params, code_block, return_type ),
+            AstNode::ProcedureDeclaration { identifier, params, code_block } => self.compile_procedure_declaration(identifier, params, code_block),
             AstNode::FunctionCall { identifier, parameters } => self.compile_function_call( identifier, parameters ),
             AstNode::ReturnStatement { value }  => self.compile_return_statement( value ),
             _ => panic!("Cannot compile with node: {}", node)
@@ -111,11 +113,19 @@ impl<'ctx> CodeGenerator<'ctx> {
 
 
     pub fn output(&mut self, file_name: &str) -> String {
-        let output_file = format!("{}.ll", file_name);
+        std::fs::create_dir_all("compiled_tests").expect("Failed to create compiled_tests directory");
+
+        let output_file;
+        if file_name.contains("test") {
+            output_file = format!("compiled_tests/{}.ll", file_name);
+        } else {
+            output_file = format!("{}.ll", file_name);
+        }
+
         let _ = self.module.print_to_file(output_file.clone());
         println!("LLVM IR written to {}", output_file);
 
-        self.module.print_to_stderr();
+        // self.module.print_to_stderr();
         self.module.print_to_string().to_string()
     }
 
@@ -161,6 +171,8 @@ impl<'ctx> CodeGenerator<'ctx> {
             self.create_print_func();
             self.module.get_function("printf").expect("printf function does not exist: print compilation error")
         });
+
+        println!("COMPILE PRINT VALUE: {}", value);
 
         match value {
             Expression::StringLiteral(s) => {
@@ -238,16 +250,18 @@ impl<'ctx> CodeGenerator<'ctx> {
             },
 
             Expression::Identifier(identifier) => {
+                println!("IDENTIFIER: {}", identifier);
                let variable = if let Some(variable) = self.variables.get(&identifier) {
                     variable
                 } else {
                     panic!("Could not get variable in compile print")
                 };
 
-                println!("parsed type: {:?}", variable.parsed_type);
+                println!("Variable {:?}", variable);
+
                 let format_str = match variable.parsed_type {
-                    Type::Strl(_) => self.builder.build_global_string_ptr("%s\n", "format_str"),
-                    Type::Integer => self.builder.build_global_string_ptr("%d\n", "format_str"),
+                    Type::Str | Type::Strl(_) => self.builder.build_global_string_ptr("%s\n", "format_str"),
+                    Type::Integer | Type::Boolean => self.builder.build_global_string_ptr("%d\n", "format_str"),
                     Type::FloatType => self.builder.build_global_string_ptr("%f\n", "format_str"),
                     _ =>  panic!("Unsupported type for printing")
 
@@ -255,7 +269,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
                 let var_alloca = variable.alloca.clone();
 
-                if matches!(variable.parsed_type, Type::Strl(_)) {
+                if matches!(variable.parsed_type, Type::Str | Type::Strl(_)) {
                     let _ = self.builder.build_call(
                         printf,
                         &[format_str.as_pointer_value().into(), var_alloca.into()],
@@ -374,9 +388,20 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     fn compile_expr(&mut self, expr: Expression) -> inkwell::values::BasicValueEnum<'ctx> {
         match expr {
-            Expression::StringLiteral(s) => inkwell::values::BasicValueEnum::ArrayValue(self.context.const_string(s.as_bytes(), true)),
+            Expression::StringLiteral(s) => {
+                let ptr = self.context.const_string(s.as_bytes(), true);
+
+                BasicValueEnum::ArrayValue(ptr)
+            },
             Expression::IntegerLiteral(val) => self.context.i32_type().const_int(val as u64, false).into(),
             Expression::FloatLiteral(val) => self.context.f64_type().const_float(val.parse::<f64>().expect("cannot turn val into f64")).into(),
+            Expression::BooleanLiteral(b) => {
+                if b == true {
+                    self.context.bool_type().const_int(1, false).into()
+                } else {
+                    self.context.bool_type().const_int(0, false).into()
+                }
+            }
             Expression::Identifier(id) => self.build_load(id),
             Expression::BinaryOp(left, op, right) => {
                 self.compile_binary_op(*left, op, *right)
@@ -524,6 +549,10 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     fn llvm_type_converter(&mut self, t: Type) -> BasicTypeEnum<'ctx> {
         match t {
+            Type::Str => {
+                let str_type = self.context.ptr_type(inkwell::AddressSpace::default());
+                inkwell::types::BasicTypeEnum::PointerType(str_type)
+            },
             Type::Strl(l) => {
                 let i8_type = self.context.i8_type();
                 let array_type = i8_type.array_type(l.try_into().unwrap());
@@ -660,8 +689,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.move_to_block(merge_block);
     }
 
-
-    fn compile_function_declaration(&mut self, identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode>, return_type: Type) {
+    fn compile_procedure_declaration(&mut self, identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode>) {
         let prev_block = self.current_block;
         let prev_func = self.current_func;
 
@@ -677,14 +705,8 @@ impl<'ctx> CodeGenerator<'ctx> {
             param_types.push(pty.into());
         }
 
-        let ret_type = self.llvm_type_converter(return_type);
-        let fn_type = match ret_type {
-            BasicTypeEnum::IntType(t) => t.fn_type(&param_types, false),
-            BasicTypeEnum::FloatType(t) => t.fn_type(&param_types, false),
-            BasicTypeEnum::ArrayType(t) => t.fn_type(&param_types, false),
-            // Add other cases as needed
-            _ => panic!("Unsupported return type for function"),
-        };
+        let bool_type = self.context.bool_type();
+        let fn_type = bool_type.fn_type(&param_types, false);
 
         let function = self.module.add_function(&function_name, fn_type, None);
         let entry_block = function.get_last_basic_block().unwrap_or_else(|| self.context.append_basic_block(function, "entry"));
@@ -719,11 +741,116 @@ impl<'ctx> CodeGenerator<'ctx> {
         }
 
         self.compile_block(code_block);
+        let bool_value = self.context.bool_type().const_int(1, false);
+        let _ = self.builder.build_return(Some(&bool_value));
 
 
         self.module.get_function(prev_func.expect("Couldnt get prev func").get_name().to_str().expect("Couldnt turn into str"));
         self.builder.position_at_end(prev_block.expect("Couldnt get prev block"));
         self.functions.insert(function_name, function);
+
+
+    }
+
+
+    fn compile_function_declaration(&mut self, identifier: Token, params: Vec<Parameter>, code_block: Vec<AstNode>, return_type: Type) {
+        let prev_block = self.current_block;
+        let prev_func = self.current_func;
+
+        // get function identifier
+        let function_name = match identifier {
+            Token::Identifier(id) => id,
+            _ => panic!("Expected token"),
+        };
+
+        // collect parameters and get types
+        let mut param_types = Vec::new();
+        for param in params.clone() {
+            println!("PARAM {:?}", param);
+           let param_type = param.param_type;
+            let pty = self.llvm_type_converter(param_type);
+            param_types.push(pty.into());
+        }
+
+        // get return type
+        let ret_type = self.llvm_type_converter(return_type);
+        let fn_type = match ret_type {
+            BasicTypeEnum::IntType(t) => t.fn_type(&param_types, false),
+            BasicTypeEnum::FloatType(t) => t.fn_type(&param_types, false),
+            BasicTypeEnum::ArrayType(t) => t.fn_type(&param_types, false),
+            // Add other cases as needed
+            _ => panic!("Unsupported return type for function"),
+        };
+
+        // create the llvm function
+        let function = self.module.add_function(&function_name, fn_type, None);
+        let entry_block = function.get_last_basic_block().unwrap_or_else(|| self.context.append_basic_block(function, "entry"));
+        self.move_to_block(entry_block);
+
+        // save params as variables
+        for (i, param) in params.iter().enumerate() {
+            let param_name = match &param.identifier {
+                Expression::Identifier(name) => name.clone(),
+                _ => panic!("Expected identifier for parameter"),
+            };
+
+            let param_value = function.get_nth_param(i as u32)
+                .expect("Failed to get parameter value");
+
+            match param.param_type {
+                Type::Str | Type::Strl(_) => {
+                    println!("PARAM VALUE {}", param_value);
+                    let array_type = match param_value {
+                        BasicValueEnum::PointerValue(ptr) => ptr,
+                        _ => panic!("Expected array type for string parameter"),
+                    };
+
+                    let alloca = self.builder.build_alloca(array_type.get_type(), &param_name)
+                        .expect("Failed to create alloca for string parameter");
+                    println!("ALLOCA {:?}", alloca);
+
+                    self.builder.build_store(alloca, param_value)
+                        .expect("Failed to store string parameter value");
+
+                    let variable = Variable {
+                        alloca,
+                        var_type: array_type.get_type().into(),
+                        var_counter: 0,
+                        parsed_type: param.param_type.clone(),
+                    };
+
+                    self.variables.insert(param_name, variable);
+                },
+                _ => {
+                    let param_type = self.llvm_type_converter(param.param_type.clone());
+                    let alloca = self.builder.build_alloca(param_type, &param_name)
+                        .expect("Failed to create alloca for parameter");
+
+                    self.builder.build_store(alloca, param_value)
+                        .expect("Failed to store parameter value");
+
+                    let variable = Variable {
+                        alloca,
+                        var_type: param_type,
+                        var_counter: 0,
+                        parsed_type: param.param_type.clone(),
+                    };
+
+                    self.variables.insert(param_name, variable);
+
+                }
+
+            }
+
+        }
+
+        self.compile_block(code_block);
+
+
+        self.module.get_function(prev_func.expect("Couldnt get prev func").get_name().to_str().expect("Couldnt turn into str"));
+        self.builder.position_at_end(prev_block.expect("Couldnt get prev block"));
+        self.functions.insert(function_name, function);
+
     }
 
     fn compile_return_statement(&mut self, value: Expression) {

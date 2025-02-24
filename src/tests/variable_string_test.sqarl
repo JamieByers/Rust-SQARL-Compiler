@@ -1,0 +1,2 @@
+DECLARE s INITIALLY "Hello world!"
+SEND s TO DISPLAY

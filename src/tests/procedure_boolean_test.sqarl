@@ -1,0 +1,9 @@
+PROCEDURE func(BOOLEAN param1)
+    SEND param1 TO DISPLAY
+END PROCEDURE
+
+func(TRUE)
+
+
+
+

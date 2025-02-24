@@ -1,0 +1,5 @@
+PROCEDURE func(INTEGER param1)
+    SEND param1 TO DISPLAY
+END PROCEDURE
+
+func(123)
