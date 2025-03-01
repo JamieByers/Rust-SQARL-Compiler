@@ -1,3 +1,4 @@
+use inkwell::types::ArrayType;
 use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
 use inkwell::values::{BasicMetadataValueEnum, FloatValue, FunctionValue};
@@ -385,26 +386,20 @@ impl<'ctx> CodeGenerator<'ctx> {
         };
 
         let val = self.compile_expr(value.clone());
+        println!("VAL {:?}", val);
+        println!("VAL TyPE {:?}", val.get_type());
 
-        let (parsed_type, variable_counter, variable_alloca) = if let Some(variable) = self.variables.get(&variable_identifier) {
+        let (_parsed_type, variable_counter, variable_alloca) = if let Some(variable) = self.variables.get(&variable_identifier) {
             (variable.parsed_type.clone(), variable.var_counter.clone(), variable.alloca.clone())
         } else {
             panic!("Could not get parsed type or variable counter");
         };
 
-        match parsed_type {
-            Type::Strl(_) => {
+        match val.get_type() {
+            BasicTypeEnum::ArrayType(at) => {
                 let counter = variable_counter + 1;
                 let temp = self.get_temp(&variable_identifier);
-
-                let string_value = match value {
-                    Expression::StringLiteral(s) => s.clone(),
-                    _ => panic!("String expected in variable assignment, found: {:?}", &value)
-                };
-
-                let ty = self.llvm_type_converter(Type::Strl(string_value.len() + 1));
-
-                let alloca = self.builder.build_alloca(ty, &temp).expect("Couldnt create alloca in variable assignment");
+                let alloca = self.builder.build_alloca(at, &temp).expect("Couldnt build alloca in variable assignment");
                 let _store = self.builder.build_store(alloca, val).expect("Couldnt build store in variable assignment");
 
                 if let Some(variable) = self.variables.get_mut(&variable_identifier) {
@@ -416,8 +411,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             _ => {
                 let _ = self.builder.build_store(variable_alloca, val.clone());
             }
-        }
-
+        };
     }
 
     fn compile_expr(&mut self, expr: Expression) -> inkwell::values::BasicValueEnum<'ctx> {

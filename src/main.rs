@@ -6,7 +6,6 @@ pub mod lexer;
 pub mod parser;
 pub mod compiler;
 pub mod code_generator;
-pub mod stdlib;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -72,7 +71,6 @@ macro_rules! create_test {
         fn $file_name() {
             let (binding, file_name) = get_file(format!("{}.sqarl", stringify!($file_name)).to_string());
             let output = Compiler::test(binding, file_name);
-            println!("OUTPUT: \n {}", output);
             assert_eq!(output, $expected_result)
         }
     };
@@ -86,6 +84,7 @@ mod test {
     create_test!(basic_string_concat_test, "Hello world!");
     create_test!(basic_string_test, "Hello world!");
     create_test!(variable_string_test, "Hello world!");
+    create_test!(string_concat_assignment_test, "Hello world!");
 
     // function testing
     create_test!(function_string_test, "Hello world!\nfunction string: Hello world!");
