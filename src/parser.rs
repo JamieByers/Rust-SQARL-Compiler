@@ -56,7 +56,8 @@ pub enum AstNode {
     },
     FunctionCall {
         identifier: Box<Expression>,
-        parameters: Vec<Expression>
+        parameters: Vec<Expression>,
+        return_type: Type,
     },
     ProcedureDeclaration {
         identifier: Token,
@@ -109,6 +110,7 @@ pub enum Expression {
     FunctionCall {
         name: Box<Expression>,
         parameters: Vec<Expression>,
+        return_type: Type,
     },
     MethodCall {
         prefix: Box<Expression>,
@@ -131,7 +133,7 @@ impl Expression {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Display)]
+#[derive(Debug, PartialEq, Clone, Display, Hash, Eq)]
 pub enum Type {
     Str,
     Strl(usize),
@@ -180,6 +182,7 @@ pub struct Parser<'a> {
     lexer: Lexer<'a>,
     current_token: Token,
     variables: HashMap<String, (Expression, Type)>,
+    functions: HashMap<String, AstNode>,
 }
 
 impl<'a> Parser<'a> {
@@ -190,6 +193,7 @@ impl<'a> Parser<'a> {
             lexer,
             current_token,
             variables: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
@@ -380,10 +384,34 @@ impl<'a> Parser<'a> {
         }
         self.advance(); // skips )
 
+        let return_type = self.get_function_return_type(func_name.clone());
+
         Ok(Expression::FunctionCall {
             name: Box::new(func_name),
             parameters,
+            return_type: return_type.clone(),
         })
+    }
+
+    fn get_function_return_type(&mut self, func_name: Expression) -> Type {
+        let func_identifier = match func_name {
+           Expression::Identifier(ref id) => id,
+            _ => panic!("Expected function identifier")
+        };
+
+        let calling_function = self.functions.get(func_identifier).expect("Couldnt get functionn from hashmap");
+        let return_type: Type = match calling_function {
+           AstNode::FunctionDeclaration { identifier: _, params: _, code_block: _, return_type } => {
+                return_type.clone()
+           },
+            AstNode::ProcedureDeclaration { identifier: _, params: _, code_block: _} => {
+                Type::Integer
+            },
+            _ => panic!("Expected a function call")
+        };
+
+        return_type
+
     }
 
     fn handle_lone_indentifier(&mut self) -> AstNode {
@@ -392,8 +420,8 @@ impl<'a> Parser<'a> {
         println!("expr {:?}", expr);
 
         match expr {
-            Ok(Expression::FunctionCall { name, parameters }) => {
-                AstNode::FunctionCall { identifier: name, parameters }
+            Ok(Expression::FunctionCall { name, parameters, return_type }) => {
+                AstNode::FunctionCall { identifier: name, parameters, return_type }
             },
             _ => panic!("Lone identifier cannot be parsed"),
         }
@@ -427,7 +455,7 @@ impl<'a> Parser<'a> {
             Token::StringLiteral(val) => Ok(Expression::StringLiteral(val.to_string())),
             Token::Int(val) => Ok(Expression::IntegerLiteral(*val)),
             Token::Float(val) => Ok(Expression::FloatLiteral(val.clone().to_string())),
-            Token::Identifier(val) => Ok(Expression::Identifier(val.to_string())),
+            Token::Identifier(identifier) => Ok(Expression::Identifier(identifier.to_string())),
             Token::False => Ok(Expression::BooleanLiteral(false)),
             Token::True => Ok(Expression::BooleanLiteral(true)),
             Token::LeftBracket => {
@@ -460,8 +488,14 @@ impl<'a> Parser<'a> {
 
     fn variable_declaration(&mut self) -> AstNode {
         self.advance();
+        let ident = self.current_token.clone();
+        let identifier = match ident {
+            Token::Identifier(id) => Expression::Identifier(id.to_string()),
+             _ => panic!("Expected an identifier")
+        };
+        self.advance();
+
         let mut var_type = Type::None;
-        let identifier = self.expression().unwrap();
         self.advance();
         if self.current_token == Token::As {
             self.advance();
@@ -479,7 +513,7 @@ impl<'a> Parser<'a> {
             var_type = Type::BinaryOp
         }
 
-        println!("IDENTIFIER {}", identifier);
+        println!("IDENTIFIER {}, VALUE {}", identifier, value);
         let id = identifier.clone().value();
 
         self.variables
@@ -771,12 +805,21 @@ impl<'a> Parser<'a> {
 
         let code_block = self.parse_block();
 
-        AstNode::FunctionDeclaration {
-            identifier,
+        let node = AstNode::FunctionDeclaration {
+            identifier: identifier.clone(),
             params,
             code_block,
             return_type,
-        }
+        };
+
+        let id_string = match identifier {
+            Token::Identifier(ref id) => id,
+            _ => panic!("Expected identifier in FunctionDeclaration"),
+        };
+
+        self.functions.insert(id_string.to_string(), node.clone());
+
+        node
     }
 
     fn procedure_declaration(&mut self) -> AstNode {
@@ -784,11 +827,19 @@ impl<'a> Parser<'a> {
 
         let code_block = self.parse_block();
 
-        AstNode::ProcedureDeclaration {
-            identifier,
+        let procedure_node = AstNode::ProcedureDeclaration {
+            identifier: identifier.clone(),
             params,
             code_block,
-        }
+        };
+
+        let id = match identifier {
+           Token::Identifier(ref id) => id.to_string(),
+            _ => panic!("Expected identifier"),
+        };
+        self.functions.insert(id, procedure_node.clone());
+
+        procedure_node
     }
 
     fn return_statement(&mut self) -> AstNode {

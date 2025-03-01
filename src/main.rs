@@ -6,12 +6,14 @@ pub mod lexer;
 pub mod parser;
 pub mod compiler;
 pub mod code_generator;
+pub mod stdlib;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
     let file = &args[1];
     let (binding, file_name) = get_file(file.to_string());
 
+    println!("FILE : {}", file);
     let mut compiler = Compiler::new(&binding);
     compiler.compile(file_name.to_string());
 
@@ -36,9 +38,13 @@ fn get_file(file: String) -> (String, String) {
         _ => panic!("Error turning cwd into a string"),
     };
 
-    let input = if file_name.contains("test") {
+    let args: Vec<_> = env::args().collect();
+    let input = if file_name.contains("test") && args.len() < 2 {
         format!("{}/src/tests/{}", cwd, file)
-    } else {
+    } else if file_name.contains("test") && args.len() >= 2  {
+        format!("{}/tests/{}", cwd, file)
+    }
+    else {
         format!("{}/{}", cwd, file)
     };
 
@@ -66,6 +72,7 @@ macro_rules! create_test {
         fn $file_name() {
             let (binding, file_name) = get_file(format!("{}.sqarl", stringify!($file_name)).to_string());
             let output = Compiler::test(binding, file_name);
+            println!("OUTPUT: \n {}", output);
             assert_eq!(output, $expected_result)
         }
     };
@@ -75,16 +82,24 @@ macro_rules! create_test {
 mod test {
     use super::*;
 
+    // string testing
+    create_test!(basic_string_concat_test, "Hello world!");
     create_test!(basic_string_test, "Hello world!");
     create_test!(variable_string_test, "Hello world!");
 
-    create_test!(function_string_test, "Hello world!");
+    // function testing
+    create_test!(function_string_test, "Hello world!\nfunction string: Hello world!");
     create_test!(function_integer_test, "123");
     create_test!(function_float_test, "123.123000");
     create_test!(function_boolean_test, "1");
 
+    // procedure testing
+    create_test!(procedure_string_test, "Hello world!");
     create_test!(procedure_integer_test, "123");
     create_test!(procedure_float_test, "123.123000");
     create_test!(procedure_boolean_test, "1");
+
+    // loops testing
+    create_test!(while_loop_test, "0\n1\n2\n3\n4\n5");
 
 }

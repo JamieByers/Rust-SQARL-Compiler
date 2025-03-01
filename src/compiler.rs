@@ -63,7 +63,7 @@ impl Compiler {
         println!("");
         println!("Output: ");
 
-        let stdout = String::from_utf8(output.stdout).expect("Couldnt turn stdout to string from bytes");
+        let stdout = String::from_utf8_lossy(&output.stdout);
         let trimmed_stdout = stdout.trim().to_string();
         println!("{}", trimmed_stdout);
 

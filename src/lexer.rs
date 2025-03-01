@@ -331,7 +331,7 @@ impl<'a> Lexer<'a> {
                 }
             }
             '>' => {
-                if *self.chars.peek().unwrap() == '=' {
+                if self.current_char == '=' {
                     self.advance();
                     Token::GreaterThanOrEqual
                 } else {
@@ -339,7 +339,7 @@ impl<'a> Lexer<'a> {
                 }
             },
             '<' => {
-                if *self.chars.peek().unwrap() == '=' {
+                if self.current_char == '=' {
                     self.advance();
                     Token::LessThanOrEqual
                 } else {

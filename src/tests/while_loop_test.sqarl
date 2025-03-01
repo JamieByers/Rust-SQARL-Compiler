@@ -1,0 +1,5 @@
+DECLARE condition INITIALLY 0
+WHILE condition <= 5 THEN
+    SEND condition TO DISPLAY
+    SET condition TO condition+1
+END WHILE

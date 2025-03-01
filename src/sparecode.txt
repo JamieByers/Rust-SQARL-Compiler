@@ -1,0 +1,27 @@
+    fn get_string(&mut self, hsav: ArrayValue) {
+        let hs = hsav.to_string();
+        if hs.contains(" load ") {
+            let id = self.find_identifier_by_load(hsav.to_string()).expect("ERROR ");
+            println!("ID : {}", id);
+            let var = self.variables.get(&id).expect("");
+            println!("\n VARIABLE VALUE {:?} \n ", var.value);
+
+            let load = self.builder.build_load(var.var_type, var.alloca, &id).unwrap();
+            println!("LOAD : {:?}", load);
+            println!("LOAD STRING : {:?}", load.to_string());
+        }
+
+    }
+
+    fn find_identifier_by_load(&mut self, input: String) -> Result<String, String> {
+        let parts: &Vec<_> = &input.split_whitespace().collect();
+
+        for index in 0..parts.len() {
+            if parts[index].starts_with('%') && index != 1 {
+                return Ok(parts[index][1..parts[index].len()-1].to_string())
+            }
+        }
+
+        Err("Couldnt find % part".to_string())
+    }
+
