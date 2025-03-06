@@ -97,7 +97,7 @@ pub enum Expression {
     StringLiteral(String),
     IntegerLiteral(i32),
     FloatLiteral(String),
-    ArrayLiteral(Vec<Box<Expression>>),
+    ArrayLiteral(Vec<Box<Expression>>, Type, usize),
     BooleanLiteral(bool),
     Identifier(String),
     BinaryOp(Box<Expression>, Token, Box<Expression>),
@@ -125,7 +125,7 @@ impl Expression {
             Expression::StringLiteral(s) => s.clone(),
             Expression::IntegerLiteral(i) => i.clone().to_string(),
             Expression::FloatLiteral(f) => f.clone().to_string(),
-            Expression::ArrayLiteral(a) => format!("{:?}", a).to_string(),
+            Expression::ArrayLiteral(a, _, _) => format!("{:?}", a).to_string(),
             Expression::BooleanLiteral(b) => b.clone().to_string(),
 
             _ => panic!("Cannot get value from expression, expr: {:?}", self)
@@ -142,6 +142,7 @@ pub enum Type {
     Boolean,
     Character,
     Array,
+    Arrayl(usize, Box<Type>),
     Record,
     Class,
     ArrayOf {
@@ -474,7 +475,25 @@ impl<'a> Parser<'a> {
                     elemements.push(Box::new(element));
                 }
 
-                Ok(Expression::ArrayLiteral(elemements))
+                let first_element = *elemements[0].clone();
+                let array_type = match first_element {
+                    Expression::StringLiteral(_) => Type::Str,
+                    Expression::IntegerLiteral(_) => Type::Integer,
+                    Expression::FloatLiteral(_) => Type::FloatType,
+                    Expression::BooleanLiteral(_) => Type::Boolean,
+                    Expression::Identifier(identifier) => Type::Identifier(identifier),
+                    Expression::ArrayLiteral(_, arr_type, _) => arr_type,
+                    // BinaryOp not allowed in arrays
+                    // Grouping not ready
+                    // list index not ready
+                    Expression::FunctionCall { name: _, parameters: _, return_type } => return_type,
+                    // Method call not ready
+
+                    _ => panic!("Cannot use value in an array: {:?}", first_element),
+                };
+
+                let array_len = elemements.clone().len();
+                Ok(Expression::ArrayLiteral(elemements, array_type, array_len ))
             }
 
             _ => Err(format!(
@@ -547,6 +566,7 @@ impl<'a> Parser<'a> {
             Expression::IntegerLiteral(..) => Type::Integer,
             Expression::FloatLiteral(..) => Type::FloatType,
             Expression::BooleanLiteral(..) => Type::Boolean,
+            Expression::ArrayLiteral(_, ty, len) => Type::Arrayl(len, Box::new(ty)),
             Expression::Identifier(identifier) => {
                 let (_, variable_type) = self.variables.get(&identifier).expect("Cannot get variable");
                 variable_type.clone()

@@ -80,6 +80,11 @@ macro_rules! create_test {
 mod test {
     use super::*;
 
+    // printing testing
+    create_test!(printing_string_test, "Hello World!");
+    create_test!(printing_integer_test, "1");
+    create_test!(printing_float_test, "1.000000");
+
     // string testing
     create_test!(basic_string_concat_test, "Hello world!");
     create_test!(basic_string_test, "Hello world!");
@@ -100,5 +105,7 @@ mod test {
 
     // loops testing
     create_test!(while_loop_test, "0\n1\n2\n3\n4\n5");
+    // create_test!(nested_while_loop_test, "1\n2\n3\n1\n2\n3\n1\n2\n3\n"); // infinite while loop
+    // issue
 
 }

@@ -1,0 +1,9 @@
+DECLARE outer_condition INITIALLY 0
+WHILE outer_condition < 3 THEN
+    SET outer_condition TO outer_condition+1
+    DECLARE inner_condition INITIALLY 0
+    WHILE inner_condition < 3 THEN
+        SEND inner_condition TO DISPLAY
+    END WHILE
+END WHILE
+

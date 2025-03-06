@@ -1,7 +1,7 @@
-use inkwell::types::ArrayType;
+use inkwell::types::BasicType;
 use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{BasicMetadataValueEnum, FloatValue, FunctionValue};
+use inkwell::values::{BasicMetadataValueEnum, BasicValue, FloatValue, FunctionValue};
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -108,7 +108,15 @@ impl<'ctx> CodeGenerator<'ctx> {
         }
     }
 
-
+    fn match_format_string(&mut self, ty: Type) -> &str {
+        match ty {
+            Type::Character => "%c",
+            Type::Str | Type::Strl(_) => "%s",
+            Type::Integer => "%i",
+            Type::FloatType => "%f",
+            _ => unreachable!()
+        }
+    }
 
     // write sys code to run this automatically -
     // llc -filetype=obj output.ll -o output.o
@@ -146,7 +154,8 @@ impl<'ctx> CodeGenerator<'ctx> {
     }
 
     fn create_print_func(&mut self) {
-        let i32_type = self.context.ptr_type(inkwell::AddressSpace::default());
+        // let i32_type = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i32_type = self.context.i32_type();
         let printf_type = i32_type.fn_type(&[self.context.ptr_type(inkwell::AddressSpace::default()).into()], true);
 
         let _printf = match self.module.get_function("printf") {
@@ -199,7 +208,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             },
 
             Expression::IntegerLiteral(v) => {
-                let str_format = self.builder.build_global_string_ptr("%s\n", "format_str");
+                let str_format = self.builder.build_global_string_ptr("%d\n", "format_str");
                 let val = BasicValueEnum::IntValue(self.context.i32_type().const_int(v as u64, false));
 
                 let _ = self.builder.build_call(
@@ -210,6 +219,18 @@ impl<'ctx> CodeGenerator<'ctx> {
 
             },
 
+            Expression::FloatLiteral(v) => {
+                let str_format = self.builder.build_global_string_ptr("%f\n", "format_str").unwrap();
+                let v: f64 = v.parse().unwrap();
+                let val = BasicValueEnum::FloatValue(self.context.f64_type().const_float(v));
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[str_format.as_pointer_value().into(), val.into_float_value().into()],
+                    "printf"
+                );
+
+            },
 
             Expression::BinaryOp(_, _, _) => {
                 let result = self.compile_expr(value);
@@ -453,6 +474,30 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let call_result = self.builder.build_call(function, &compiled_args, &temp_name).expect("Build call failed").try_as_basic_value().left().expect("Function call did not return a value");
                 call_result
             },
+            Expression::ArrayLiteral(values, array_type, array_len) => {
+
+                let mut compiled_values = Vec::new();
+                for value in values {
+                    let compiled_value = self.compile_expr(*value);
+                    compiled_values.push(compiled_value);
+                }
+
+                let arr_type_basic = match self.llvm_type_converter(array_type) {
+                    BasicTypeEnum::IntType(int) => int.vec_type(array_len as u32),
+                    BasicTypeEnum::FloatType(float) => float.vec_type(array_len as u32),
+                    BasicTypeEnum::PointerType(ptr) => ptr.vec_type(array_len as u32),
+                    _ => unreachable!(),
+                };
+
+                let mut expr_value = arr_type_basic.const_zero().as_basic_value_enum();
+                for (index, value) in compiled_values.iter().enumerate() {
+                    let index = self.context.i8_type().const_int(index as u64, false);
+                    expr_value = expr_value.into_vector_value().const_insert_element(index, *value);
+                }
+
+                expr_value
+
+            },
 
             _ => panic!("Cannot compile expression: {:?}", expr),
         }
@@ -687,6 +732,14 @@ impl<'ctx> CodeGenerator<'ctx> {
             Type::FloatType => self.context.f64_type().into(),
             Type::Boolean => self.context.bool_type().into(),
             Type::Character => self.context.i8_type().into(),
+            Type::Arrayl(array_len, ty) => {
+                let arr_type_basic = match self.llvm_type_converter(*ty) {
+                    BasicTypeEnum::IntType(int) => int.vec_type(array_len as u32),
+                    BasicTypeEnum::PointerType(ptr) => ptr.vec_type(array_len as u32),
+                    _ => unreachable!(),
+                };
+                arr_type_basic.as_basic_type_enum()
+            }
 
             _ => panic!("Typing is not compatable with type: {:?}", t)
         }
