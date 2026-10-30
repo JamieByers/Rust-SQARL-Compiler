@@ -1,7 +1,9 @@
 use std::fs;
+use crate::parser::AstNode;
 
 pub mod lexer;
 pub mod parser;
+pub mod compiler;
 pub mod code_generator;
 
 
@@ -15,9 +17,12 @@ fn main() {
     let mut lexer = lexer::Lexer::new(&binding);
     lexer.lex();
     let mut p = parser::Parser::new(&binding);
-    let tokens = p.parse();
+    let node: AstNode = p.parse();
 
-    println!("Tokens: {:?}", tokens);
+    let mut compiler = compiler::Compiler::new(node.clone());
+    compiler.compile();
+
+    println!("Nodes: {:?}", node);
 }
 
 

@@ -1,1 +1,1 @@
-DECLARE hello INITIALLY (1+2)/3 + 7*object.value
+DECLARE hello INITIALLY AS BOOLEAN TRUE
