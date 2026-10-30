@@ -1,1 +1,0 @@
-CLASS Person IS { STRING name, INTEGER age }
