@@ -1,0 +1,4 @@
+DECLARE condition INITIALLY true
+IF condition = true THEN
+    SEND "true" TO DISPLAY
+END IF

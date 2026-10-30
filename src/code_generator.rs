@@ -1,7 +1,7 @@
 use inkwell::types::BasicType;
 use inkwell::AddressSpace;
 use inkwell::basic_block::BasicBlock;
-use inkwell::values::{BasicMetadataValueEnum, BasicValue, FloatValue, FunctionValue};
+use inkwell::values::{AnyValue, BasicMetadataValueEnum, BasicValue, FloatValue, FunctionValue};
 use crate::lexer::Token;
 use inkwell::{types::BasicTypeEnum, values::BasicValueEnum};
 use inkwell::context::Context;
@@ -105,16 +105,6 @@ impl<'ctx> CodeGenerator<'ctx> {
     fn compile_block(&mut self, nodes: Vec<AstNode>) {
         for node in nodes {
             self.match_node(node);
-        }
-    }
-
-    fn match_format_string(&mut self, ty: Type) -> &str {
-        match ty {
-            Type::Character => "%c",
-            Type::Str | Type::Strl(_) => "%s",
-            Type::Integer => "%i",
-            Type::FloatType => "%f",
-            _ => unreachable!()
         }
     }
 
@@ -227,6 +217,42 @@ impl<'ctx> CodeGenerator<'ctx> {
                 let _ = self.builder.build_call(
                     printf,
                     &[str_format.as_pointer_value().into(), val.into_float_value().into()],
+                    "printf"
+                );
+
+            },
+
+
+            Expression::BooleanLiteral(b) => {
+                let str_format = self.builder.build_global_string_ptr("%d\n", "format_str");
+                let val = BasicValueEnum::IntValue(self.context.i32_type().const_int(b as u64, false));
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[str_format.expect("As pointer value failed?").as_pointer_value().into(), val.into()],
+                    "printf"
+                );
+            },
+
+            Expression::ArrayLiteral(values, ty, length) => {
+                let expr = self.compile_expr(Expression::ArrayLiteral(values, ty, length));
+                let string_expr = expr.print_to_string().to_string();
+
+                let str_format = self.builder.build_global_string_ptr("%s\n", "format_str");
+                let str_temp = self.get_temp("display_str_temp");
+                let var_type = Type::Strl(string_expr.len()+1);
+                self.compile_variable_declaration(
+                    Expression::Identifier(str_temp.clone()),
+                    Expression::StringLiteral(string_expr.clone()),
+                    var_type
+                );
+
+                let temp_var = self.variables.get(&str_temp).expect("Failed to find temp variable");
+
+                let _ = self.builder.build_call(
+                    printf,
+                    &[str_format.expect("As pointer value failed?").as_pointer_value().into(),
+                      temp_var.alloca.into()],
                     "printf"
                 );
 
@@ -755,6 +781,7 @@ impl<'ctx> CodeGenerator<'ctx> {
         self.builder.position_at_end(entry);
     }
 
+    // fix different types
     fn compile_if_statement(&mut self, condition: Expression, code_block: Vec<AstNode>, elif_statements: Vec<ElseIfStatement>, else_statement: Option<ElseStatement>) {
         let function = self.current_func.expect("Could not get function from self.current_func");
 

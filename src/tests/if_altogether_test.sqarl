@@ -1,0 +1,29 @@
+DECLARE condition INITIALLY true
+
+IF condition = true THEN
+    SEND "true" TO DISPLAY
+ELSE IF condition = false THEN
+    SEND "false" TO DISPLAY
+ELSE
+    SEND "other" TO DISPLAY
+END IF
+
+DECLARE second_condition INITIALLY false
+
+IF second_condition = true THEN
+    SEND "true" TO DISPLAY
+ELSE IF second_condition = false THEN
+    SEND "false" TO DISPLAY
+ELSE
+    SEND "other" TO DISPLAY
+END IF
+
+DECLARE third_condition INITIALLY 17
+
+IF third_condition = true THEN
+    SEND "true" TO DISPLAY
+ELSE IF third_condition = false THEN
+    SEND "false" TO DISPLAY
+ELSE
+    SEND "other" TO DISPLAY
+END IF

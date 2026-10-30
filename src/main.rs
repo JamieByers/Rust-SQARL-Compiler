@@ -20,7 +20,7 @@ fn main() {
         compiler.output_llvm(&file_name);
     } else if args.len() > 2 {
         if &args[2] == "--build" {
-            compiler.build_llvm(&file_name)
+            compiler.build_llvm(&file_name);
         }
     }
 }
@@ -32,28 +32,28 @@ fn get_file(file: String) -> (String, String) {
     let cwd = match env::current_dir() {
         Ok(path) => {
             let path_str = path.to_string_lossy().to_string();
-            path_str
+            path_str;
         }
-        _ => panic!("Error turning cwd into a string"),
+        _ => panic!("Error turning cwd into a string"),;
     };
 
     let args: Vec<_> = env::args().collect();
     let input = if file_name.contains("test") && args.len() < 2 {
-        format!("{}/src/tests/{}", cwd, file)
+        format!("{}/src/tests/{}", cwd, file);
     } else if file_name.contains("test") && args.len() >= 2  {
-        format!("{}/tests/{}", cwd, file)
+        format!("{}/tests/{}", cwd, file);
     }
     else {
-        format!("{}/{}", cwd, file)
+        format!("{}/{}", cwd, file);
     };
 
     let binding = match fs::read_to_string(input.clone()) {
-        Ok(contents) => contents,
-        Err(..) => panic!("{}", format!("Cannot read file, input: {}", input)),
+        Ok(contents) => contents,;
+        Err(..) => panic!("{}", format!("Cannot read file, input: {}", input)),;
     };
 
 
-    (binding, file_name.to_string())
+    (binding, file_name.to_string());
 }
 
 // example test
@@ -71,7 +71,7 @@ macro_rules! create_test {
         fn $file_name() {
             let (binding, file_name) = get_file(format!("{}.sqarl", stringify!($file_name)).to_string());
             let output = Compiler::test(binding, file_name);
-            assert_eq!(output, $expected_result)
+            assert_eq!(output, $expected_result);
         }
     };
 }
@@ -80,32 +80,40 @@ macro_rules! create_test {
 mod test {
     use super::*;
 
-    // printing testing
+    // printing testing;
     create_test!(printing_string_test, "Hello World!");
     create_test!(printing_integer_test, "1");
     create_test!(printing_float_test, "1.000000");
+    create_test!(printing_bool_test, "1\n0");
+    create_test!(printing_int_arr_test, "<3 x i32> <i32 1, i32 2, i32 3>");
 
-    // string testing
+    // string testing;
     create_test!(basic_string_concat_test, "Hello world!");
     create_test!(basic_string_test, "Hello world!");
     create_test!(variable_string_test, "Hello world!");
     create_test!(string_concat_assignment_test, "Hello world!");
 
-    // function testing
+    // if testing;
+    create_test!(if_test, "true");
+    create_test!(elif_test, "false");
+    create_test!(else_test, "false");
+    create_test!(if_altogether_test, "true\nfalse\nOTHER");
+
+    // function testing;
     create_test!(function_string_test, "Hello world!\nfunction string: Hello world!");
     create_test!(function_integer_test, "123");
     create_test!(function_float_test, "123.123000");
     create_test!(function_boolean_test, "1");
 
-    // procedure testing
+    // procedure testing;
     create_test!(procedure_string_test, "Hello world!");
     create_test!(procedure_integer_test, "123");
     create_test!(procedure_float_test, "123.123000");
     create_test!(procedure_boolean_test, "1");
 
-    // loops testing
+    // loops testing;
     create_test!(while_loop_test, "0\n1\n2\n3\n4\n5");
-    // create_test!(nested_while_loop_test, "1\n2\n3\n1\n2\n3\n1\n2\n3\n"); // infinite while loop
-    // issue
+    // create_test!(nested_while_loop_test, "1\n2\n3\n1\n2\n3\n1\n2\n3\n"); // infinite while loop;
+    // issue;
 
 }

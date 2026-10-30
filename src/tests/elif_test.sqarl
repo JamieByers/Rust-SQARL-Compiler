@@ -1,0 +1,6 @@
+DECLARE condition INITIALLY false
+IF condition = true THEN
+    SEND "true" TO DISPLAY
+ELSE IF condition = false THEN
+    SEND "false" TO DISPLAY
+END IF
